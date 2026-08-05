@@ -102,15 +102,67 @@ organization-specific data such as employee IDs or internal classifications.
 | CloudFront distribution or ALB with no WebACL | AWS WAF — route to the `waf` skill | **Critical** |
 | Internet-facing ALB | AWS WAF — route to the `waf` skill | **Critical** |
 | API Gateway REST API with no WebACL | AWS WAF — route to the `waf` skill | High |
-| Any VPC | Route 53 Resolver DNS Firewall — route to the `route53` skill | Medium |
+| VPC with no DNS Firewall rule group association | Route 53 Resolver DNS Firewall with AWS-managed lists — route to the `route53` skill | High |
+| DNS Firewall associated, no query logging | Enable Resolver query logging | Medium |
+| DNS Firewall associated, Advanced rules off | DNS Firewall Advanced for tunneling and DGA detection | Medium |
 | VPC with flow logs | Security Lake `VPC_FLOW` source | Medium |
 | Public-facing workload | Shield Advanced — route to the `shieldadvanced` skill | Medium |
+| Egress traffic needing L3-L7 inspection | Network Firewall | Medium |
+| Network Firewall deployed, `RuleOrder` not `STRICT_ORDER` | Switch to strict order — IaC defaults to Action Order | High |
+| Network Firewall deployed, `StreamExceptionPolicy: DROP` | Change to `REJECT` or `CONTINUE` — DROP silently blocks mid-stream flows | High |
+| Network Firewall deployed, AZ without an endpoint | Add an endpoint per AZ containing workloads | High |
+| Network Firewall deployed, no logging configuration | Enable ALERT and FLOW logs | Medium |
+| More than one account with VPCs or web-facing resources | Firewall Manager for org-wide rollout | Medium |
 
 WAF, DNS Firewall, and Shield Advanced have dedicated skills in this repository with far
-more depth than this matrix. Recommend the service, then hand off — do not reproduce
-their configuration guidance here.
+more depth than this matrix. Recommend the service, then hand off — do not reproduce their
+configuration guidance here.
+
+Network Firewall has **no** dedicated skill in this repository. Report the presence and
+configuration findings above, then stop: Suricata rule authoring, `HOME_NET` scoping, TLS
+inspection, and custom egress rules are out of scope for a posture assessment. Say so
+plainly rather than improvising rule guidance.
+
+## Triggered by certificates
+
+| Trigger from pass 1 | Recommend | Severity |
+|---|---|---|
+| Any ACM certificate | EventBridge expiry rule on "ACM Certificate Approaching Expiration" to SNS | High |
+| Certificate with `Type: IMPORTED` | Custom renewal automation — ACM does not manage renewal or expiry notices for imported certs | High |
+| Certificate issued via Private CA `IssueCertificate` | Custom expiry notification — ACM does not track these either | High |
+| Email-validated certificate | Migrate to DNS validation for automatic renewal | Medium |
+| Certificate with `InUse: false` | Review and remove — unused certs count against quota | Low |
+| `DaysBeforeExpiry` at default 45 | Confirm 45 days suits the renewal process; range is 1-45 | Low |
+| Private CA present | Verify hierarchy is 2-3 levels, root isolated and not issuing end-entity certs | Medium |
+| Internal hostnames in a public certificate | Consider disabling Certificate Transparency logging | Low |
+
+ACM cannot be "enabled" — it is always available. These are monitoring gaps rather than
+enablement gaps, and the severity reflects that an unmonitored expiry is an outage, not a
+breach.
 
 ## Triggered by organization context
+
+### Standards hygiene
+
+Triggered by pass 2 rather than pass 1 — these are findings about how enabled standards
+are configured.
+
+| Observed in pass 2 | Recommend | Severity |
+|---|---|---|
+| Unified Security Hub enabled **and** a CSPM finding aggregator exists | Redundant aggregation — audit EventBridge, SIEM, ticketing, and Lambda dependencies first, then remove the CSPM aggregator | Medium |
+| Unified Security Hub enabled, Threat Analytics off | Consider Threat Analytics for production so GuardDuty detections appear beside the misconfigurations that enabled them | Medium |
+| Unified Security Hub not enabled, CSPM only | Evaluate unified Security Hub for exposure findings and attack path analysis | Medium |
+| PCI DSS v3.2.1 enabled | Migrate to v4.0.1 — v3.2.1 is retired by the PCI SSC | High |
+| PCI DSS v3.2.1 **and** v4.0.1 both enabled | Retire v3.2.1 once coverage is compared; paying twice for overlapping controls | Medium |
+| CIS below v5.0.0 enabled | Plan migration to v5.0.0; both may run during transition | Medium |
+| FSBP v1.0.0 with no other standard | Layer standards per business requirement | Low |
+| `AutoEnableStandards: NONE` in an org | New accounts get no standards — set to `DEFAULT` | High |
+| Central configuration `ENABLED` but `AutoEnable: false` | Expected under central configuration; policy governs enrollment, so do not flag as a gap | n/a |
+
+The guide's transition guidance is to enable both versions simultaneously to compare
+coverage, then retire the old one. Flag a long-lived overlap, not the overlap itself.
+
+### Organization posture
 
 | Trigger from pass 1 | Recommend | Severity |
 |---|---|---|
@@ -146,11 +198,15 @@ For each recommendation:
 ```
 [SEVERITY] <Service or plan>
   Justified by:  <resource type and count from pass 1>
-  Current state: NOT ENABLED | ENABLED BUT UNTUNED | UNKNOWN (AccessDenied)
-  Guide section: <which guide page this comes from>
+  Current state: NOT ENABLED | ENABLED BUT UNTUNED | UNKNOWN (permission denied)
+  Guide section: <guide page> | n/a (not guide-sourced)
   Cost note:     <free trial, usage page, or billing consideration>
   Enablement:    <command, presented but NOT run>
 ```
+
+`Guide section: n/a` is correct and expected for IAM Access Analyzer, AWS Config, and the
+severity ranking itself. Do not invent a citation to fill the field — an unsourced
+recommendation labelled as such is more useful than a fabricated reference.
 
 Every recommendation needs a cost note. These services bill on usage and a recommendation
 without a cost signal is not actionable. Point at each service's free trial and usage
