@@ -3,9 +3,11 @@ name: recommending-security-services
 description: >
   Inventory the infrastructure in an AWS account, check which AWS security services and
   protection plans are enabled, and recommend the ones that the deployed workloads
-  actually warrant — GuardDuty and its protection plans, Security Hub CSPM standards,
-  Inspector scan types, Macie, Detective, Security Lake, IAM Access Analyzer, and AWS
-  Config. Use when the user asks what security services they should turn on, whether
+  actually warrant — GuardDuty and its protection plans, Security Hub and Security Hub
+  CSPM standards, Inspector scan types, Macie, Detective, Security Lake, IAM Access
+  Analyzer, AWS Config, ACM certificate expiry monitoring, Network Firewall, Route 53
+  Resolver DNS Firewall, and Firewall Manager. Use when the user asks what security
+  services they should turn on, whether
   their account is missing security coverage, to audit security service enablement, to
   review security posture for an organization or a single account, or to justify
   security service spend against what is deployed. Do NOT use for configuring an
@@ -82,7 +84,7 @@ Run pass 1, then pass 2, then produce the pass 3 report.
 Discover which of these exist: EC2 instances, EBS volumes, ECR repositories, ECS
 clusters and their launch types, EKS clusters and their compute types, Lambda functions,
 S3 buckets, RDS and Aurora clusters, CloudFront distributions, ALBs, API Gateway APIs,
-and public-facing endpoints.
+public-facing endpoints, VPCs and their AZs, and ACM certificates and Private CAs.
 
 **Constraints:**
 
@@ -116,6 +118,15 @@ pass conditions.
   every existing account covered but auto-enable off has a growing gap
 - You SHOULD check the finding aggregation region for Security Hub and note whether
   cross-region aggregation is configured
+- You MUST check unified Security Hub and Security Hub CSPM separately. They are different
+  products sharing the `securityhub` API namespace — the unified service uses the `*V2`
+  operations. Both can be enabled at once, and that combination produces a
+  redundant-aggregation finding
+- You MUST NOT report ACM as "not enabled" — it is always available. Report certificate
+  expiry-monitoring gaps instead
+- You MUST treat Network Firewall's absence as a design question rather than a gap. It is
+  not a baseline service; recommend it only where egress or east-west inspection is a
+  stated requirement
 
 **Pass 3 — Report.** See
 [references/recommendation-matrix.md](references/recommendation-matrix.md) for the
@@ -124,7 +135,9 @@ inventory-to-service mapping and severity assignments.
 **Constraints:**
 
 - You MUST report each recommendation with: the service or plan, the discovered resources
-  that justify it, current state, severity, and the guide section it comes from
+  that justify it, current state, severity, and the guide section it comes from — or
+  `n/a (not guide-sourced)` where none exists. You MUST NOT fabricate a citation to fill
+  that field
 - You MUST order findings by severity, Critical first
 - You MUST include a cost note on every recommendation — these services bill on usage,
   and a recommendation without a cost signal is not actionable. Direct the user to each
@@ -187,9 +200,23 @@ commands for the resource types that service covers.
 
 ## Troubleshooting
 
-**`AccessDenied` on a `describe-organization-configuration` call** — You are likely in a
-member account, not the delegated administrator. Report scope as single-account and say
-which checks were skipped.
+**`BadRequestException` / `InvalidInputException` on GuardDuty
+`describe-organization-configuration`** — Message reads "a delegated administrator account
+has not been enabled". This is a scope error, not a misconfiguration: you are in a member
+account. Note that GuardDuty raises `BadRequestException` here rather than `AccessDenied`,
+so an error-string match on "denied" will miss it.
+
+**`BadRequestException` on GuardDuty `list-organization-admin-accounts`** — Message reads
+"you are not the admin account for your AWS Organization". Same cause. Report scope as
+single-account and list which checks were skipped.
+
+**An account can be a delegated administrator and still fail these calls** — Delegated
+admin status is per service. `organizations list-delegated-administrators` returning the
+current account does not mean it is GuardDuty's delegated admin. Check each service
+separately and never infer one service's admin from another's.
+
+**`AccessDenied` on a `describe-organization-configuration` call** — Same scope conclusion
+as above for the services that do return `AccessDenied`.
 
 **`BadRequestException: The request is rejected because the current account is not
 associated with a detector`** — GuardDuty is not enabled in this region. Treat as NOT
@@ -202,8 +229,15 @@ enabled in this region. Treat as NOT ENABLED.
 never been activated in this region, or the caller lacks `inspector2:BatchGetAccountStatus`.
 Distinguish the two with `aws iam simulate-principal-policy` before reporting.
 
-**`macie2 get-macie-session` returns `AccessDeniedException`** — Macie is not enabled in
-this region. The API does not return a distinct "not enabled" error here.
+**`macie2 get-macie-session` returns `AccessDeniedException`** — Check the message body.
+`AccessDeniedException: Macie is not enabled` means not enabled; an
+`AccessDeniedException` without that text means the caller lacks the permission. Same
+exception type, two different answers — distinguish on the message, and fall back to
+`aws iam simulate-principal-policy` when it is ambiguous.
+
+**`guardduty list-coverage` returns `null` Resources** — Expected when
+`RUNTIME_MONITORING` is `DISABLED`. Check the feature status from `get-detector` first;
+do not report this as a coverage failure.
 
 **Empty `detective list-graphs` with GuardDuty enabled** — Detective is not enabled.
 GuardDuty must be on before Detective, so verify GuardDuty first and note the ordering
@@ -219,6 +253,29 @@ group covers the resource types the Security Hub standards evaluate.
 - [references/enablement-checks.md](references/enablement-checks.md) — Pass 2 per-service checks and pass conditions
 - [references/recommendation-matrix.md](references/recommendation-matrix.md) — Inventory-to-service mapping with severity
 - [references/iam-permissions.md](references/iam-permissions.md) — Read-only permissions by pass
-- [AWS Security Services Best Practices](https://aws.github.io/aws-security-services-best-practices/) — Source for all recommendations in this skill
+- [AWS Security Services Best Practices](https://aws.github.io/aws-security-services-best-practices/) — Source for the service recommendations and tuning guidance. See Provenance below for what came from elsewhere.
 - [AWS Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/welcome.html) — Delegated administrator account placement
 - [AWS Well-Architected Security Pillar](https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html)
+
+## Provenance
+
+Service recommendations, tuning guidance, and cost levers come from the 11 service pages
+of the AWS Security Services Best Practices guide.
+
+Two services in this skill are **not** covered by that guide: **IAM Access Analyzer** and
+**AWS Config**. Config is included because Security Hub CSPM controls cannot evaluate
+without it — that dependency is stated in the CSPM guide. Access Analyzer is included as a
+no-additional-cost posture check.
+
+API operation names and enum values are from the AWS API models, not the guide, which is
+prose and does not specify API shapes. Verify against `aws <service> help` if an operation
+appears to have changed.
+
+The severity rankings, the three-pass structure, and the inventory-to-service trigger
+mapping are this skill's own design — the guide recommends practices but does not rank
+them. When reporting, attribute the recommendation to the guide and the severity to this
+skill rather than implying the guide assigned it.
+
+AWS WAF is in the guide but deliberately not covered here; the `waf` skill implements its
+14 sub-pages. Network Firewall's rule authoring is likewise out of scope — this skill
+checks its presence and policy configuration only.

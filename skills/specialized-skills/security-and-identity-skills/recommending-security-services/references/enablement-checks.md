@@ -16,8 +16,13 @@ aws guardduty list-detectors --region <region>
 aws guardduty get-detector --detector-id <id> --region <region>
 ```
 
-`get-detector` returns `Features[]` with a `Name` and `Status` per plan. Valid feature
-names:
+`get-detector` returns `Features[]` with a `Name` and `Status` per plan.
+
+`Features[]` also includes the foundational sources `CLOUD_TRAIL`, `DNS_LOGS`, and
+`FLOW_LOGS`. These are always `ENABLED` on an active detector and are not separately
+billable protection plans — do not report them as gaps or recommend toggling them.
+
+Optional protection plans, which are the ones worth checking:
 
 | Feature | Covers | Applies when inventory shows |
 |---|---|---|
@@ -29,16 +34,20 @@ names:
 | `RUNTIME_MONITORING` | EC2, ECS, EKS runtime | EC2, ECS, or EKS on EC2 |
 | `EKS_RUNTIME_MONITORING` | EKS runtime (superseded by `RUNTIME_MONITORING`) | EKS on EC2 |
 | `AI_PROTECTION` | Bedrock model invocation activity | Bedrock usage |
+| `AI_ANALYST` | Generative-AI finding investigation | Any account |
 
 Runtime Monitoring has an `AdditionalConfiguration` array for agent management:
 `EC2_AGENT_MANAGEMENT`, `ECS_FARGATE_AGENT_MANAGEMENT`, `EKS_ADDON_MANAGEMENT`. The guide
 recommends letting GuardDuty manage agents so new resources are covered automatically.
 
 ```bash
-# Runtime Monitoring agent coverage — enabled but uncovered is a silent gap
+# Runtime Monitoring agent coverage — enabled but uncovered is a silent gap.
+# Returns null Resources when RUNTIME_MONITORING is DISABLED; that is expected,
+# not an error. Check the feature status first and skip this call if disabled.
 aws guardduty list-coverage --detector-id <id> --region <region>
 
-# Organization posture
+# Organization posture. Both calls raise BadRequestException / InvalidInputException
+# from a non-admin account — see Troubleshooting in SKILL.md.
 aws guardduty list-organization-admin-accounts --region <region>
 aws guardduty describe-organization-configuration --detector-id <id> --region <region>
 aws guardduty list-members --detector-id <id> --region <region>
@@ -84,6 +93,131 @@ Config enabled (see below) — without it most controls cannot evaluate.
 
 **Cost note:** AWS Config is **not** included in the Security Hub 30-day trial, so
 standards-driven Config rule usage bills from day one.
+
+## AWS Security Hub (unified)
+
+Distinct from CSPM. The older product was rebranded Security Hub CSPM; today's Security
+Hub is a unified platform that correlates GuardDuty, Inspector, Macie, and CSPM signals
+into exposure findings and attack paths. Both can be enabled at once, and both live in the
+`securityhub` API namespace — the unified service uses the `*V2` operations.
+
+```bash
+# Unified Security Hub. ResourceNotFoundException / ResourceConflictException = not enabled.
+aws securityhub describe-security-hub-v2 --region <region>
+
+# Unified aggregation
+aws securityhub list-aggregators-v2 --region <region>
+```
+
+**Cross-cutting finding:** if unified Security Hub is enabled **and** a CSPM finding
+aggregator exists, the CSPM-level aggregation is redundant — the guide recommends
+eliminating it, since findings flow into Security Hub automatically. Before recommending
+removal, the guide is explicit that you must audit EventBridge rules, SIEM feeds,
+ticketing workflows, and custom Lambda functions first, because dropping it "can silently
+break alerting and response workflows."
+
+**Plans:** Essentials (resource-based pricing) covers Inspector scanning, CSPM checks,
+GuardDuty EC2 Malware Scanning, and risk/exposure analytics. Threat Analytics (usage-based,
+optional) embeds GuardDuty detections in the console so a suspicious IAM action appears
+next to the misconfiguration that enabled it. The 30-day trial covers Essentials only —
+not Threat Analytics, Lambda code scanning, or Security Hub Extended.
+
+**Policies vs deployments:** Organizations policies exist for Security Hub and Inspector
+and auto-apply to new accounts, preventing drift. GuardDuty and CSPM use one-time
+deployments that cannot be viewed or edited and do **not** cover newly enabled accounts —
+so auto-enable for new members remains necessary for those two.
+
+**Pass conditions:** enabled in the delegated admin's home region; no redundant CSPM
+aggregator; Threat Analytics considered for production accounts.
+
+## AWS Certificate Manager
+
+ACM is always available rather than something you enable, so the checks here are
+monitoring and configuration hygiene.
+
+```bash
+# Certificate inventory with expiry and in-use status
+aws acm list-certificates \
+  --query 'CertificateSummaryList[].{Domain:DomainName,Status:Status,NotAfter:NotAfter,InUse:InUse,Type:Type}' \
+  --region <region>
+
+# Expiry notification window. ACM emits daily EventBridge events starting
+# DaysBeforeExpiry out; valid range is 1-45, default 45.
+aws acm get-account-configuration --region <region>
+
+# Per-certificate detail — renewal eligibility and Certificate Transparency preference
+aws acm describe-certificate --certificate-arn <arn> --region <region>
+
+# Private CA
+aws acm-pca list-certificate-authorities \
+  --query 'CertificateAuthorities[].{Arn:Arn,Type:Type,Status:Status}' --region <region>
+```
+
+**Pass conditions:** an EventBridge rule on source `aws.acm`, detail-type "ACM Certificate
+Approaching Expiration", targeting SNS; DNS validation rather than email for renewable
+certs; imported and Private-CA-issued certificates have their own notification automation,
+since ACM does **not** manage renewal or expiry notices for those.
+
+**Notes:** ACM validity is fixed at 13 months and cannot be changed. CloudFront
+certificates must be issued in `us-east-1` regardless of the distribution's origin region.
+Certificate Transparency logging cannot be toggled from the console, cannot change once
+the renewal period starts (~60 days before expiry), and failures there are silent.
+
+## AWS Network Firewall
+
+Presence and logging only. Rule authoring — Suricata syntax, `HOME_NET` scoping, strict
+rule order, stream exception policy, TLS inspection — is deep enough to warrant its own
+skill and is out of scope here.
+
+```bash
+aws network-firewall list-firewalls --region <region>
+aws network-firewall describe-firewall --firewall-name <name> --region <region>
+aws network-firewall describe-logging-configuration --firewall-name <name> --region <region>
+```
+
+**Pass conditions:** if deployed, a firewall endpoint exists in every AZ containing
+workloads; both ALERT and FLOW log types configured; `RuleOrder` is `STRICT_ORDER` (the
+IaC default is Action Order, so this is a common drift); `StreamExceptionPolicy` is
+`REJECT` or `CONTINUE` rather than `DROP`, which silently blocks mid-stream flows without
+sending a TCP reset.
+
+## Route 53 Resolver DNS Firewall
+
+```bash
+# Rule group to VPC associations — an unassociated rule group protects nothing
+aws route53resolver list-firewall-rule-group-associations \
+  --query 'FirewallRuleGroupAssociations[].{Vpc:VpcId,Status:Status,Priority:Priority}' \
+  --region <region>
+
+aws route53resolver list-firewall-rule-groups --region <region>
+
+# Per-VPC fail-open setting
+aws route53resolver get-firewall-config --resource-id <vpc-id> --region <region>
+
+# Query logging — required for DNS threat hunting
+aws route53resolver list-resolver-query-log-configs --region <region>
+```
+
+**Pass conditions:** at least one rule group associated with each VPC; AWS-managed domain
+lists attached as the first layer; DNS Firewall Advanced enabled for DNS tunneling and
+domain-generation-algorithm detection; query logging on with a deliberate retention policy.
+
+DNS Firewall is the earliest filter in the chain — blocking at the DNS layer stops traffic
+before it reaches Network Firewall, which reduces downstream processing cost.
+
+## AWS Firewall Manager
+
+Relevant when DNS Firewall or WAF rules need org-wide rollout so new VPCs are covered
+automatically.
+
+```bash
+# ResourceNotFoundException = no FMS administrator designated
+aws fms get-admin-account --region us-east-1
+aws fms list-policies --region us-east-1
+```
+
+**Pass conditions:** an FMS administrator account exists if the org has more than one
+account with VPCs or web-facing resources.
 
 ## Amazon Inspector
 
@@ -204,8 +338,17 @@ aws accessanalyzer list-analyzers --region <region>
 aws accessanalyzer list-findings --analyzer-arn <arn> --region <region>
 ```
 
-**Pass conditions:** at least one external-access analyzer with account or organization
-zone of trust; an unused-access analyzer if the org reviews unused permissions.
+Analyzer `type` values: `ACCOUNT`, `ORGANIZATION`, `ACCOUNT_UNUSED_ACCESS`,
+`ORGANIZATION_UNUSED_ACCESS`, `ACCOUNT_INTERNAL_ACCESS`, `ORGANIZATION_INTERNAL_ACCESS`.
+
+These are distinct analyzers, not one analyzer with modes. An account can have an
+unused-access analyzer and still have no external-access analyzer — check the `type`
+field rather than treating any active analyzer as coverage. Security Hub may create an
+unused-access analyzer automatically (named `_AccessAnalyzerForSecurityHub*`), which is
+why "an analyzer exists" is not sufficient evidence of external-access coverage.
+
+**Pass conditions:** at least one analyzer of type `ACCOUNT` or `ORGANIZATION` for
+external access; an `*_UNUSED_ACCESS` analyzer if the org reviews unused permissions.
 
 ## AWS Config
 
@@ -227,6 +370,7 @@ global resources recorded in one region only (the guide's duplication-avoidance 
 | Service | Enabled | Plans / standards on | Plans / standards off | Delegated admin | Auto-enable |
 |---|---|---|---|---|---|
 | GuardDuty | | | | | |
+| Security Hub (unified) | | | | | |
 | Security Hub CSPM | | | | | |
 | Inspector | | | | | |
 | Macie | | | | | |
@@ -234,3 +378,7 @@ global resources recorded in one region only (the guide's duplication-avoidance 
 | Security Lake | | | | | |
 | IAM Access Analyzer | | | | n/a | n/a |
 | AWS Config | | | | | |
+| ACM | always on | | | n/a | n/a |
+| Network Firewall | | | | n/a | n/a |
+| DNS Firewall | | | | n/a | n/a |
+| Firewall Manager | | | | | n/a |

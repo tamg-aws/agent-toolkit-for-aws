@@ -97,6 +97,24 @@ aws ec2 describe-vpcs --query 'Vpcs[].VpcId' --region <region>
 aws ec2 describe-flow-logs \
   --query 'FlowLogs[].{Id:FlowLogId,Resource:ResourceId,Status:FlowLogStatus}' \
   --region <region>
+
+# Availability zones in use — Network Firewall wants an endpoint per AZ with workloads
+aws ec2 describe-subnets \
+  --query 'Subnets[].{Id:SubnetId,AZ:AvailabilityZone,Vpc:VpcId}' --region <region>
+```
+
+## Certificates
+
+```bash
+# ACM certificates. Type distinguishes AMAZON_ISSUED from IMPORTED and PRIVATE —
+# ACM only manages renewal and expiry notices for AMAZON_ISSUED.
+aws acm list-certificates \
+  --query 'CertificateSummaryList[].{Domain:DomainName,Status:Status,Type:Type,NotAfter:NotAfter,InUse:InUse}' \
+  --region <region>
+
+# Private CAs
+aws acm-pca list-certificate-authorities \
+  --query 'CertificateAuthorities[].{Arn:Arn,Type:Type,Status:Status}' --region <region>
 ```
 
 ## Foundational logging
@@ -144,4 +162,7 @@ they are what keeps the report from recommending services the account cannot use
 | CloudFront distributions | | WebACL attached? |
 | ALBs | | internet-facing vs internal |
 | API Gateway APIs | | |
-| VPCs | | flow logs enabled? |
+| VPCs | | flow logs enabled? DNS Firewall associated? |
+| AZs with workloads | | Network Firewall endpoint per AZ? |
+| ACM certificates | | how many IMPORTED or PRIVATE |
+| Private CAs | | hierarchy depth |

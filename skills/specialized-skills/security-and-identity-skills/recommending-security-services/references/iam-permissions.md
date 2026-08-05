@@ -10,7 +10,8 @@ skill must not perform one.
 | Compute | `ec2:DescribeInstances`, `ec2:DescribeVolumes`, `ssm:DescribeInstanceInformation`, `lambda:ListFunctions` |
 | Containers | `ecr:DescribeRepositories`, `ecs:ListClusters`, `ecs:ListServices`, `ecs:DescribeServices`, `eks:ListClusters`, `eks:DescribeCluster`, `eks:ListFargateProfiles`, `eks:ListNodegroups` |
 | Data | `s3:ListAllMyBuckets`, `s3:GetBucketLocation`, `rds:DescribeDBClusters`, `rds:DescribeDBInstances` |
-| Network | `cloudfront:ListDistributions`, `elasticloadbalancing:DescribeLoadBalancers`, `apigateway:GET`, `ec2:DescribeVpcs`, `ec2:DescribeFlowLogs` |
+| Network | `cloudfront:ListDistributions`, `elasticloadbalancing:DescribeLoadBalancers`, `apigateway:GET`, `ec2:DescribeVpcs`, `ec2:DescribeFlowLogs`, `ec2:DescribeSubnets` |
+| Certificates | `acm:ListCertificates`, `acm:DescribeCertificate`, `acm-pca:ListCertificateAuthorities`, `acm-pca:DescribeCertificateAuthority` |
 | Logging | `cloudtrail:DescribeTrails`, `cloudtrail:GetEventSelectors` |
 | Org | `organizations:DescribeOrganization`, `organizations:ListDelegatedAdministrators`, `account:ListRegions` |
 
@@ -26,6 +27,11 @@ skill must not perform one.
 | Security Lake | `securitylake:ListDataLakes`, `securitylake:GetDataLakeSources`, `securitylake:ListLogSources`, `securitylake:GetDataLakeOrganizationConfiguration`, `securitylake:GetDataLakeExceptionSubscription` |
 | Access Analyzer | `accessanalyzer:ListAnalyzers`, `accessanalyzer:ListFindings` |
 | Config | `config:DescribeConfigurationRecorders`, `config:DescribeConfigurationRecorderStatus`, `config:DescribeDeliveryChannels`, `config:DescribeConfigurationAggregators` |
+| Security Hub (unified) | `securityhub:DescribeSecurityHubV2`, `securityhub:ListAggregatorsV2` |
+| ACM | `acm:GetAccountConfiguration` |
+| Network Firewall | `network-firewall:ListFirewalls`, `network-firewall:DescribeFirewall`, `network-firewall:DescribeLoggingConfiguration`, `network-firewall:DescribeFirewallPolicy` |
+| DNS Firewall | `route53resolver:ListFirewallRuleGroupAssociations`, `route53resolver:ListFirewallRuleGroups`, `route53resolver:GetFirewallConfig`, `route53resolver:ListResolverQueryLogConfigs` |
+| Firewall Manager | `fms:GetAdminAccount`, `fms:ListPolicies` |
 
 ## Diagnosing gaps
 
