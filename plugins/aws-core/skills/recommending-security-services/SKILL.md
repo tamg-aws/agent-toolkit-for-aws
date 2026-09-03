@@ -14,7 +14,6 @@ description: >
   individual service in depth (use the waf, shieldadvanced, route53, or
   securing-s3-buckets skills), for scanning application source code, or for
   remediating individual findings.
-version: 1
 ---
 
 # Recommending AWS Security Services
