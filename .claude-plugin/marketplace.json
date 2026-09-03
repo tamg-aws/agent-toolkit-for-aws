@@ -125,7 +125,12 @@
         "aws-config",
         "access-analyzer",
         "threat-detection",
-        "vulnerability-scanning"
+        "vulnerability-scanning",
+        "satv2",
+        "prowler",
+        "security-assessment",
+        "ship-workshop",
+        "multi-account-scan"
       ],
       "name": "aws-core",
       "source": "./plugins/aws-core",

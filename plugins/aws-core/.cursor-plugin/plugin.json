@@ -124,7 +124,12 @@
     "aws-config",
     "access-analyzer",
     "threat-detection",
-    "vulnerability-scanning"
+    "vulnerability-scanning",
+    "satv2",
+    "prowler",
+    "security-assessment",
+    "ship-workshop",
+    "multi-account-scan"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"

@@ -1,0 +1,148 @@
+# SATv2 Prerequisites
+
+Complete every check here before the first deploy step. Each unmet item causes a failure
+partway through the deployment, after infrastructure already exists.
+
+## Account roles
+
+SATv2 spans three account roles. Establish which real account fills each one before
+deploying anything.
+
+| Role | What it does | Credentials needed |
+|---|---|---|
+| **Management account** | Owns the organization; hosts the StackSet and its own copy of the member role | Yes — required, see below |
+| **Scanning account** | Runs CodeBuild and Prowler, holds results | Yes |
+| **Member accounts** | Assessed; receive `ProwlerMemberRole` via StackSet | No — StackSet delivers |
+
+The workshop uses the **audit account** as the scanning account. Any account can serve,
+but it must be able to assume `ProwlerMemberRole` in every target account and to call
+`organizations:ListAccounts`.
+
+## Management-account credentials are mandatory
+
+Delegated-administrator credentials alone are **not sufficient**. Management-account
+access is required at four points:
+
+1. Creating the service-managed StackSet for `ProwlerMemberRole`. Delegatable — if
+   CloudFormation StackSets is delegated to another account, that account may create it
+   instead.
+2. Deploying `1-sat2-member-roles.yaml` as a **plain stack to the management account**.
+   StackSets do not apply to the management account, so it does not otherwise receive the
+   role. Not delegatable.
+3. Creating or editing the **Organizations delegation policy**, if the scanning account
+   cannot list accounts. Organizations settings are management-account-only. Not
+   delegatable.
+4. **Cleanup** — deleting the management-account stack.
+
+Confirm with the user that they can obtain management-account credentials before
+starting. If they cannot, stop and say so: the deployment cannot complete, and partial
+deployment leaves roles in member accounts with no scanner able to use them.
+
+## Identity check — run first
+
+```bash
+aws sts get-caller-identity
+aws organizations describe-organization
+```
+
+Compare `Organization.MasterAccountId` to the caller's account. Echo back to the user:
+account ID, caller ARN, region, and whether this is the management account. Ask them to
+confirm before proceeding.
+
+`describe-organization` also confirms `FeatureSet: ALL`, which service-managed StackSets
+require.
+
+Note that `describe-organization`'s `AvailablePolicyTypes` field is not a reliable
+inventory of enabled policy types. Use `list-roots` instead:
+
+```bash
+aws organizations list-roots --query 'Roots[].PolicyTypes'
+```
+
+## Organizations permissions for the scanning account
+
+The CodeBuild buildspec calls `aws organizations list-accounts` **from the scanning
+account** to discover scan targets. Outside the management account this call normally
+fails, and the build exits with:
+
+```text
+ERROR: Failed to retrieve account list from AWS Organizations
+```
+
+Test it before deploying, from the scanning account:
+
+```bash
+aws organizations list-accounts --query 'Accounts[?Status==`ACTIVE`].Id' --output text
+```
+
+If that fails or returns empty, the management account must add an Organizations
+delegation policy. In the management account: **Organizations → Settings → Delegated
+administrator for AWS Organizations → Delegate** (or **Edit** an existing policy).
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Statement",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<scanning_account_id>:root" },
+      "Action": [
+        "organizations:ListAccounts",
+        "organizations:DescribeAccount",
+        "organizations:ListTagsForResource"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Two cautions:
+
+- **If a delegation policy already exists, append to it — do not replace it.** Replacing
+  it can remove another account's access.
+- The ARN is hardcoded to the `aws` partition. In GovCloud or China, substitute
+  `aws-us-gov` or `aws-cn`.
+
+## Region planning
+
+- The member-role StackSet deploys to **one region**. Roles are global, so one region is
+  correct — but note which one you used, because cleanup must target the same region.
+- The scanning account's stack determines where CodeBuild runs and where results land.
+- Prowler scans the regions its own configuration covers, independent of where the stack
+  lives.
+
+## State to read before deploying
+
+Assume the organization is already partially configured. Capture current state so you can
+report deltas rather than assuming greenfield:
+
+```bash
+# Existing SATv2 footprint
+aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+  --query 'StackSummaries[?contains(StackName, `SATv2`) || contains(StackName, `rowler`)]'
+aws cloudformation list-stack-sets --status ACTIVE
+
+# Does the member role already exist here?
+aws iam get-role --role-name ProwlerMemberRole 2>/dev/null || echo "absent"
+
+# Delegated administrators already registered
+aws organizations list-delegated-administrators
+```
+
+If a `ProwlerMemberRole` or SATv2 stack already exists, report it and ask whether to
+reuse, update, or replace. Do not create a second copy.
+
+## Cost drivers to state before approval
+
+Give the user these drivers before they approve the scan, not afterward:
+
+- **CodeBuild minutes** — the dominant cost. Scales with scan tier, account count, and
+  `ConcurrentAccountScans` (which also selects a larger compute type: `Three` uses
+  `BUILD_GENERAL1_SMALL`, `Six` uses `BUILD_GENERAL1_MEDIUM`).
+- **S3 storage** — findings are written as CSV, JSON, OCSF JSON, ASFF JSON, and HTML.
+  The findings bucket is versioned and has `DeletionPolicy: Retain`, so it survives stack
+  deletion and keeps billing until deleted deliberately.
+- **Athena and Glue** — only when `Reporting` is `'true'` (the default). Athena bills per
+  byte scanned.
