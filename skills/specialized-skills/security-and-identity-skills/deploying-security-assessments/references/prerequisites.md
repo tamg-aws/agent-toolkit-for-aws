@@ -38,6 +38,62 @@ Confirm with the user that they can obtain management-account credentials before
 starting. If they cannot, stop and say so: the deployment cannot complete, and partial
 deployment leaves roles in member accounts with no scanner able to use them.
 
+## Tooling configuration
+
+This skill needs credentials for **two different accounts** in one session, so single-profile
+setups fail partway through. Configure this before starting.
+
+### AWS CLI profiles
+
+Create one profile per account role and always pass `--profile` explicitly on deploy
+commands. Do not rely on an ambient default — the cost of picking the wrong account here is
+a stack in the wrong place.
+
+```bash
+aws sts get-caller-identity --profile <management_profile>
+aws sts get-caller-identity --profile <scanning_profile>
+```
+
+### AWS MCP server, if in use
+
+The `aws-core` plugin ships an `aws-mcp` server (`mcp-proxy-for-aws-cli`). Three settings
+matter here:
+
+- **Multi-profile switching.** Set `AWS_MCP_PROXY_PROFILES` to a **space-separated** list;
+  the first entry is the default and the rest become switchable per call via the
+  `aws_profile` parameter the proxy injects. Without this the proxy binds to a single
+  profile and the management-account steps cannot run through MCP at all.
+
+  ```json
+  "aws-mcp": {
+    "command": "uvx",
+    "args": ["mcp-proxy-for-aws-cli@latest", "https://aws-mcp.us-east-1.api.aws/mcp"],
+    "env": {
+      "AWS_MCP_PROXY_PROFILES": "<scanning_profile> <management_profile>"
+    }
+  }
+  ```
+
+  `AWS_MCP_PROXY_PROFILES` takes precedence over `--profile` and `AWS_PROFILE`.
+
+- **`--read-only` blocks this skill.** If the proxy was started with `--read-only`, every
+  write-annotated tool is disabled and no deploy step will succeed through MCP. Either
+  remove the flag for this work or run the deploy steps through the AWS CLI instead.
+
+- **Region must be set per profile.** A missing region surfaces as
+  `-32602: Invalid request parameters`, not as a region error. Fix with
+  `aws configure set region <region> --profile <name>`.
+
+If the MCP server is unavailable or read-only, the AWS CLI path in
+`references/satv2-deployment.md` works unchanged — every step is expressed as a CLI
+command for that reason.
+
+### What this skill does not need
+
+No additional MCP server, hook, or plugin is required. The only hook `aws-core` ships
+(`secret-safety.py`) blocks Secrets Manager `get-secret-value`, which this skill never
+calls.
+
 ## Identity check — run first
 
 ```bash
