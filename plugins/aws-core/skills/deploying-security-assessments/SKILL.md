@@ -63,14 +63,18 @@ Two templates at the repository root:
    explicitly before creating; do not present the scan as a later, separate decision.
 
    On **update** no scan starts. The custom resource's only properties are `ServiceToken`
-   and `ProjectName`, and `ProjectName` resolves to the static literal `ProwlerCodeBuild`,
-   so changing parameters such as `MultiAccountScan` alters only environment variables and
-   sends no update to the resource. Its Lambda also acts only on `RequestType == 'Create'`
-   and no-ops otherwise. After an update you MUST start the build yourself:
+   and `ProjectName`, and `ProjectName` resolves to the static literal `ProwlerCodeBuild`, so
+   no parameter change alters it and CloudFormation sends the resource no update. Its Lambda
+   also acts only on `RequestType == 'Create'` and no-ops otherwise. After an update you MUST
+   start the build yourself:
 
    ```bash
-   aws codebuild start-build --project-name ProwlerCodeBuild
+   aws codebuild start-build --profile <scanning_profile> --project-name ProwlerCodeBuild
    ```
+
+   Do not describe parameter changes as touching "only environment variables" — changing
+   `MultiAccountScan` also toggles whether the stack creates its own member role, so it
+   adds or removes an IAM resource. See `references/troubleshooting.md`.
 
    Treat that as its own approval point — it incurs the same scan cost as a create.
 

@@ -82,7 +82,7 @@ matter here:
 
 - **Region must be set per profile.** A missing region surfaces as
   `-32602: Invalid request parameters`, not as a region error. Fix with
-  `aws configure set region <region> --profile <name>`.
+  `aws configure set region <region> --profile <profile>`.
 
 If the MCP server is unavailable or read-only, the AWS CLI path in
 `references/satv2-deployment.md` works unchanged — every step is expressed as a CLI
@@ -97,8 +97,8 @@ calls.
 ## Identity check — run first
 
 ```bash
-aws sts get-caller-identity
-aws organizations describe-organization
+aws sts get-caller-identity --profile <profile>
+aws organizations describe-organization --profile <profile>
 ```
 
 Compare `Organization.MasterAccountId` to the caller's account. Echo back to the user:
@@ -108,11 +108,33 @@ confirm before proceeding.
 `describe-organization` also confirms `FeatureSet: ALL`, which service-managed StackSets
 require.
 
+`FeatureSet: ALL` is necessary but not sufficient. Service-managed StackSets also need
+trusted access enabled. Check it before Step 1:
+
+```bash
+aws cloudformation describe-organizations-access --profile <management_profile>
+```
+
+`Status: ENABLED` means you are ready. If it reports `INACTIVE`, enable trusted access
+**from the management account** — not from a delegated admin:
+
+```bash
+aws organizations enable-aws-service-access --profile <management_profile> \
+  --service-principal member.org.stacksets.cloudformation.amazonaws.com
+```
+
+The principal is `member.org.stacksets.cloudformation.amazonaws.com`. Do **not** check for
+`stacksets.cloudformation.amazonaws.com` — that name does not appear in working
+organizations and looking for it produces a false negative.
+
+When running from a delegated administrator account, add `--call-as DELEGATED_ADMIN` to
+`describe-organizations-access` and to every StackSet command.
+
 Note that `describe-organization`'s `AvailablePolicyTypes` field is not a reliable
 inventory of enabled policy types. Use `list-roots` instead:
 
 ```bash
-aws organizations list-roots --query 'Roots[].PolicyTypes'
+aws organizations list-roots --profile <management_profile> --query 'Roots[].PolicyTypes'
 ```
 
 ## Organizations permissions for the scanning account
@@ -128,10 +150,29 @@ ERROR: Failed to retrieve account list from AWS Organizations
 Test it before deploying, from the scanning account:
 
 ```bash
-aws organizations list-accounts --query 'Accounts[?Status==`ACTIVE`].Id' --output text
+aws organizations list-accounts --profile <scanning_profile> \
+  --query 'Accounts[?Status==`ACTIVE`].Id' --output text
 ```
 
-If that fails or returns empty, the management account must add an Organizations
+If that succeeds, nothing further is needed — skip the policy below.
+
+**If it fails, check delegated-administrator status before writing any policy.** That call
+succeeds from the management account or from a member account registered as a delegated
+administrator, and registration for **any** supported service confers the Organizations
+read-only permissions (`ListAccounts`, `DescribeAccount`, `ListTagsForResource`) — the same
+three actions the policy below grants.
+
+```bash
+aws organizations list-delegated-administrators --profile <management_profile> \
+  --query 'DelegatedAdministrators[].[Id,Status]' --output text
+```
+
+If the scanning account appears there as `ACTIVE`, the delegation policy is unnecessary;
+the call is failing for another reason (check the CodeBuild role's own identity policy).
+Prescribing an org-level resource policy in that case is an avoidable organization-wide
+write.
+
+**Only if the scanning account is not a delegated administrator**, add an Organizations
 delegation policy. In the management account: **Organizations → Settings → Delegated
 administrator for AWS Organizations → Delegate** (or **Edit** an existing policy).
 
@@ -175,17 +216,31 @@ Assume the organization is already partially configured. Capture current state s
 report deltas rather than assuming greenfield:
 
 ```bash
-# Existing SATv2 footprint
-aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
-  --query 'StackSummaries[?contains(StackName, `SATv2`) || contains(StackName, `rowler`)]'
-aws cloudformation list-stack-sets --status ACTIVE
+# Existing SATv2 footprint. Do NOT filter to CREATE_COMPLETE/UPDATE_COMPLETE — a stack in
+# ROLLBACK_COMPLETE, UPDATE_ROLLBACK_COMPLETE or DELETE_FAILED still owns its named
+# resources and will collide, but is invisible to that filter.
+aws cloudformation list-stacks --profile <profile> \
+  --query 'StackSummaries[?StackStatus!=`DELETE_COMPLETE` && (contains(StackName,`SATv2`) || contains(StackName,`rowler`))].[StackName,StackStatus]' \
+  --output text
+
+aws cloudformation list-stack-sets --profile <profile> --status ACTIVE \
+  --query 'Summaries[].[StackSetName,PermissionModel,Status]' --output text
 
 # Does the member role already exist here?
-aws iam get-role --role-name ProwlerMemberRole 2>/dev/null || echo "absent"
+aws iam get-role --profile <profile> --role-name ProwlerMemberRole >/dev/null 2>&1 \
+  && echo "present" || echo "absent"
 
 # Delegated administrators already registered
-aws organizations list-delegated-administrators
+aws organizations list-delegated-administrators --profile <management_profile> \
+  --query 'DelegatedAdministrators[].[Id,Status]' --output text
 ```
+
+Test role existence by **exit code**, as above. Parsing CLI output for this is unreliable and
+has produced false "clean install" verdicts.
+
+From a delegated administrator account, `list-stack-sets` returns an empty list rather than
+an error unless you pass `--call-as DELEGATED_ADMIN` — another route to a false "clean
+install". Add the flag whenever the caller is not the management account.
 
 Run these in **both** the management account and the scanning account. Checking only one
 account misses an existing deployment in the other — a SATv2 solution stack lives in the
@@ -205,14 +260,16 @@ operator-assumable). Handle it this way:
 1. Enumerate the targets so the blast radius is explicit:
 
    ```bash
-   aws organizations list-accounts --query 'Accounts[?Status==`ACTIVE`].[Id,Name]' --output table
+   aws organizations list-accounts --profile <management_profile> \
+     --query 'Accounts[?Status==`ACTIVE`].[Id,Name]' --output table
    ```
 
 2. Pre-check only the accounts where you can actually assume a role — typically
    `OrganizationAccountAccessRole` or `AWSControlTowerExecution`:
 
    ```bash
-   aws sts assume-role --role-arn arn:aws:iam::<account>:role/OrganizationAccountAccessRole \
+   aws sts assume-role --profile <management_profile> \
+     --role-arn arn:<partition>:iam::<account>:role/OrganizationAccountAccessRole \
      --role-session-name satv2-precheck >/dev/null 2>&1 \
      && echo "assumable — check get-role here" || echo "not assumable — rely on step 3"
    ```
@@ -221,7 +278,8 @@ operator-assumable). Handle it this way:
    detail rather than guessing:
 
    ```bash
-   aws cloudformation list-stack-instances --stack-set-name <name> \
+   aws cloudformation list-stack-instances --profile <management_profile> \
+     --stack-set-name <stack_set_name> \
      --query 'Summaries[].{Account:Account,Status:Status,Reason:StatusReason}'
    ```
 

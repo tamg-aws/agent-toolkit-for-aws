@@ -1,164 +1,172 @@
 # Reviewing SATv2 Results
 
 All output lands in the findings bucket created by `2-sat2-codebuild-prowler.yaml` in the
-scanning account. Find its name from the stack:
+scanning account. Pass `--profile <scanning_profile>` on every command here.
 
 ```bash
-aws cloudformation describe-stack-resources --stack-name SATv2 \
-  --query 'StackResources[?ResourceType==`AWS::S3::Bucket`].PhysicalResourceId'
+aws cloudformation describe-stack-resources --profile <scanning_profile> --stack-name SATv2 \
+  --query 'StackResources[?ResourceType==`AWS::S3::Bucket`].PhysicalResourceId' --output text
 ```
+
+That bucket name is also the name of the Glue database **and** the Athena workgroup — the
+template names both `!Ref` the bucket. There is no `SATv2`-named Glue or Athena resource, so
+searching for one finds nothing.
 
 ## S3 layout
 
-The buildspec copies Prowler output into one prefix per format, but **only the formats
-Prowler actually emitted appear**. Do not treat a missing prefix as a failure — list what
-exists rather than expecting all of them:
+Only the formats Prowler actually emitted appear. Do not treat a missing prefix as a failure:
 
 | Prefix | Contents | Observed |
 |---|---|---|
-| `csv/` | Per-account CSV findings, excluding compliance output. **This is what the Glue table reads.** | Always |
+| `csv/` | Per-account findings, **semicolon-delimited**. This is what the Glue table reads | Always |
 | `ocsf-json/` | OCSF-formatted JSON | Always |
 | `html/` | Prowler's own HTML report | Always |
-| `reports/` | The automatic org summary CSV **and `satv2-dashboard.html`** — see below | When `Reporting='true'` |
-| `compliance/` | Compliance-framework CSVs | Conditional — absent in observed `Intermediate` and `Basic` multi-account runs on the pinned Prowler |
-| `json/` | Native Prowler JSON | Conditional — absent unless Prowler emits that format |
-| `asff-json/` | ASFF-formatted JSON, the format Security Hub ingests | Conditional — absent unless Prowler emits that format |
-| `athena_results/` | Athena query output | Only once a query runs through the workgroup's own output location; the automatic summary writes to `reports/` instead |
+| `reports/` | The automatic full export, its `.metadata` sidecar, and `satv2-dashboard.html` | When `Reporting='true'` |
+| `compliance/` | Compliance-framework CSVs | Conditional — absent in observed `Intermediate` and `Basic` runs |
+| `json/` | Native Prowler JSON | Conditional |
+| `asff-json/` | ASFF-formatted JSON | Conditional |
+| `athena_results/` | Athena query output | Only for queries that use the workgroup's own output location; the automatic export overrides it to `reports/` |
 
-The first four are what a normal run produces. If the user needs ASFF for Security Hub
-import, confirm it exists before promising it — verify with
-`aws s3 ls s3://<bucket>/asff-json/` rather than assuming the prefix is populated.
-
-Confirm a scan actually produced findings before interpreting emptiness as a clean result:
+The `csv/` files use `;` as the delimiter, not `,` — the Glue SerDe is `OpenCSVSerde` with
+`separatorChar: ";"`. Opening them in a tool that assumes commas yields a single column.
 
 ```bash
-aws s3 ls s3://<bucket>/csv/ --recursive --human-readable --summarize | tail -5
+aws s3 ls s3://<bucket>/csv/ --recursive --profile <scanning_profile>
 ```
 
-An empty `csv/` prefix means the scan did not complete, not that nothing was found. Check
-the **`ProwlerCodeBuild`** project's logs — see `references/troubleshooting.md`. If `csv/`
-is populated but `reports/` is empty, the scan succeeded and the fault is in the reporting
-chain instead; check `ProwlerReportingCodeBuild`.
-
-## Glue and Athena
-
-Created only when `Reporting` is `'true'` (the default).
-
-- **Glue database** — named by the stack; holds one table.
-- **Glue table `prowler`** — `EXTERNAL_TABLE`, CSV classification, `skip.header.line.count`
-  of 1, location `s3://<bucket>/csv`. Its column schema is explicit and is why the Prowler
-  version is pinned.
-- **Athena workgroup** — named after the Glue database, output to
-  `s3://<bucket>/athena_results`.
-- **Named query `Prowler organization summary`** (`qProwlerOrgSummary`) — counts findings
-  per `check_id` across all assessed accounts.
+An empty `csv/` prefix means the scan did not complete, not that nothing was found.
 
 ## Repeated scans accumulate and blend
 
 **This is the easiest way to report wrong numbers.** Every scan writes a new timestamped CSV
 per account into `csv/`; nothing is cleaned up. The Glue table is an unpartitioned
-`EXTERNAL_TABLE` over the whole `csv/` prefix, so it reads **every file from every run**, and
-the shipped `qProwlerOrgSummary` query has no run filter. Two scans of four accounts leave
-eight files, and the "organization summary" then counts both runs together with no
-indication it has done so.
+`EXTERNAL_TABLE` over the whole prefix, so it reads **every file from every run**.
 
-Observed: a second scan raised the file count from 4 to 8 and the automatic summary CSV from
-20.3 MiB to 21.7 MiB.
-
-Before reporting any count, establish which runs you are covering:
+Worse than double-counting: after a scoped re-run, some accounts hold fresh data and others
+hold data from an earlier scan, so an unfiltered query mixes scan dates per account and any
+"current posture" claim is wrong.
 
 ```bash
-# how many files, and from how many distinct runs?
-aws s3 ls s3://<bucket>/csv/ --recursive
+aws s3 ls s3://<bucket>/csv/ --recursive --profile <scanning_profile>
 ```
 
-Then either scope the query or clear the prefix:
+Then either scope the query or isolate runs:
 
-- **Scope it.** The table has a `timestamp` column. Filter to the run you mean rather than
-  querying the whole table — the shipped named query does not do this for you.
-- **Or isolate runs.** Move or delete the previous run's CSVs out of `csv/` before
-  re-scanning, so the table only sees the current run. Deleting findings is a destructive
-  act on the user's data — confirm before doing it, and never do it implicitly as part of a
-  re-scan.
+- **Scope it.** The table has a `timestamp` column. Filter to the run you mean.
+- **Or isolate.** Move or delete the previous run's CSVs before re-scanning. Deleting
+  findings is destructive to the user's data — confirm first, and never do it implicitly as
+  part of a re-scan.
 
 State the scan timestamps your numbers cover whenever you present findings after more than
 one scan.
 
+## Glue and Athena
+
+Created only when `Reporting` is `'true'` (the default).
+
+- **Glue database** — named after the findings bucket.
+- **Glue table `prowler`** — `EXTERNAL_TABLE`, `OpenCSVSerde` with `;`, 41 columns,
+  `skip.header.line.count` of 1, location `s3://<bucket>/csv`. Its schema is explicit and is
+  why the Prowler version is pinned.
+- **Athena workgroup** — also named after the bucket, output to `s3://<bucket>/athena_results`.
+- **Named query `Prowler organization summary`** (`qProwlerOrgSummary`) — counts **failed**
+  findings per `check_id` across assessed accounts. It filters `WHERE status = 'FAIL'`, so it
+  is not a count of all findings, and **nothing invokes it automatically**.
+
+### Lake Formation governs this table
+
+The stack grants table permissions through Lake Formation, and the data lake has no
+`IAMAllowedPrincipals` fallback. Only the deploying principal and the reporting Lambda's role
+hold `SELECT`. **Any other principal gets an Athena `AccessDenied` that no IAM policy
+explains** — IAM admin is not sufficient.
+
+Check whether you can grant:
+
+```bash
+aws lakeformation get-data-lake-settings --profile <scanning_profile> \
+  --query 'DataLakeSettings.DataLakeAdmins[].DataLakePrincipalIdentifier' --output text
+```
+
+If you deployed the stack, or your principal appears in that list, grant yourself `SELECT`:
+
+```bash
+aws lakeformation grant-permissions --profile <scanning_profile> \
+  --principal DataLakePrincipalIdentifier=<your_role_arn> \
+  --resource '{"Table":{"CatalogId":"<scanning_account_id>","DatabaseName":"<bucket>","Name":"prowler"}}' \
+  --permissions SELECT
+```
+
+Otherwise you cannot self-grant — `GrantPermissions` itself fails with a Lake Formation
+`AccessDenied`. Escalate to the deployer or a data lake admin rather than trying to fix it
+with IAM.
+
+Lake Formation governs metadata only here; no S3 data locations are registered, so object
+reads still fall back to IAM.
+
 ## The automatic reporting chain
 
-When `Reporting` is `'true'`, a summary and dashboard are produced **without the operator
-doing anything**. Do not tell the user to run a query manually before checking whether this
-already ran. The chain, in order:
+When `Reporting` is `'true'`, output is produced **without the operator doing anything**:
 
-1. The scan finishes → EventBridge rule `CodeBuildCompleteRunSummary` fires.
-2. `AthenaStartQueryLambda` runs a `SELECT` over the `prowler` table, writing to
-   `s3://<bucket>/reports`.
-3. A second EventBridge rule watches `reports/*.csv` for `Object Created`.
+1. `ProwlerCodeBuild` reaches `SUCCEEDED` → EventBridge rule `CodeBuildCompleteRunSummary`
+   fires. It matches only on `SUCCEEDED`.
+2. `AthenaStartQueryLambda` runs `SELECT * FROM "AwsDataCatalog"."<bucket>"."prowler"` and
+   writes the result to `s3://<bucket>/reports`.
+3. A second rule watches `reports/*.csv` for `Object Created`.
 4. That rule invokes `ProwlerReportingLambda`, which starts a **second CodeBuild project**,
    `ProwlerReportingCodeBuild`.
-5. That project uploads `satv2-dashboard.html` into `reports/`.
+5. That project clones the upstream repository and copies its static
+   `satv2-dashboard.html` into `reports/`.
 
-Two operator consequences:
+**What lands in `reports/` is a full unfiltered export, not a summary.** Step 2's query has
+no `WHERE`, no `LIMIT` and no aggregation, so the file is every row of every CSV in `csv/` —
+tens of megabytes. It is useful as a single consolidated file to feed the dashboard, not as
+something to read. For an actual summary, run `qProwlerOrgSummary`.
+
+Two further consequences:
 
 - **There are two CodeBuild projects.** `ProwlerCodeBuild` runs the scan;
-  `ProwlerReportingCodeBuild` builds the dashboard. When the dashboard is missing but the
-  scan succeeded, the failure is in the reporting project — look there, not in the scan
-  project's logs.
-- All of these resources are conditional on `Reporting`. With `Reporting='false'` none of
-  them exist, so `reports/`, the dashboard, Glue, and Athena are all absent and only the raw
-  per-format prefixes are populated.
+  `ProwlerReportingCodeBuild` publishes the dashboard.
+- The dashboard is fetched from the upstream default branch at run time and is **not
+  pinned**, unlike Prowler. It also requires the reporting project to reach github.com.
 
-This is the fallback path, not the first step — check `reports/` for the automatic summary
-before querying by hand. When you do need an ad-hoc query, or the automatic chain did not
-run, use the shipped named query rather than writing one from scratch:
+### If `reports/` is empty
 
-```bash
-aws athena list-named-queries --work-group <workgroup>
-aws athena get-named-query --named-query-id <id> --query 'NamedQuery.QueryString'
-```
+Diagnose in this order — populated `csv/` does **not** mean the scan succeeded:
 
-Then execute it:
+1. **Check whether `ProwlerCodeBuild` actually reached `SUCCEEDED`.** `post_build` uploads
+   `csv/` first and the other prefixes after; a failure on any later prefix sets a failure
+   flag and exits non-zero. So populated `csv/` with a failed build is the expected state,
+   and the EventBridge rule never fires. Look for upload errors in that project's log.
+2. **Check `Reporting`.** If `'false'`, none of the Glue, Athena or reporting resources exist.
+3. **Check the `AthenaStartQueryLambda` log.** It swallows client errors, so an Athena failure
+   leaves `reports/` empty with a healthy build and no visible error.
 
-```bash
-aws athena start-query-execution \
-  --query-string "$(aws athena get-named-query --named-query-id <id> \
-      --query 'NamedQuery.QueryString' --output text)" \
-  --work-group <workgroup>
-aws athena get-query-execution --query-execution-id <exec_id> \
-  --query 'QueryExecution.Status.State'
-aws athena get-query-results --query-execution-id <exec_id>
-```
-
-If a query fails with a column error, the Prowler output schema has drifted from the Glue
-table definition. Report that as a version mismatch rather than editing the table — see
-`references/troubleshooting.md`.
+Only if the summary CSV exists but the dashboard does not is `ProwlerReportingCodeBuild` the
+culprit — it is downstream of `reports/*.csv` and cannot cause an empty prefix.
 
 ## Presenting findings
 
-- **Lead with counts, not raw rows.** Findings volume is large; a per-account and
-  per-severity summary first, detail on request.
-- **Attribute the opinion.** These are Prowler's findings at a pinned version, not an
-  absolute verdict. State the version alongside the results.
+- **Lead with counts, not raw rows.** A per-account and per-severity summary first, detail on
+  request.
+- **Attribute the opinion.** These are Prowler's findings at a pinned version. State the
+  version alongside the results.
 - **Report scan scope explicitly.** Say how many accounts were scanned and which. If
-  `MultiAccountScan` was `'false'`, say plainly that only the scanning account was
-  assessed — a summary that silently covers one account reads as if it covered the
-  organization. Equally, say which scan run(s) the numbers come from: the Glue table blends
-  every run in `csv/` unless you filtered on `timestamp`.
-- **Do not suppress or dismiss findings.** Present what the scan found. Filtering to a
-  severity for readability is fine if you say so.
+  `MultiAccountScan` was `'false'`, say plainly that only the scanning account was assessed.
+  Say which run(s) the numbers come from — the table blends every run in `csv/` unless you
+  filtered on `timestamp`.
+- **Do not suppress or dismiss findings.** Filtering to a severity for readability is fine if
+  you say so.
 - **Findings can contain sensitive detail** — resource ARNs, account IDs, network
-  configuration. Summarize first, note what the full output contains, and show raw rows
-  only when asked.
+  configuration. Summarize first, note what the full output contains, and show raw rows only
+  when asked.
 
 ## Feeding findings elsewhere
 
-The `asff-json/` prefix is ASFF, the format Security Hub ingests, so SATv2 output can be
-imported into Security Hub CSPM rather than reviewed only in Athena. Importing is a
-mutating action on another service and is outside this skill — surface the option and let
-the user decide.
+The `asff-json/` prefix is the format Security Hub ingests, so SATv2 output can be imported
+into Security Hub CSPM. Importing is a mutating action on another service and is outside this
+skill — surface the option and let the user decide.
 
-**Check the prefix exists first.** It was absent in an observed `Intermediate` multi-account
-run, so do not offer the Security Hub route until `aws s3 ls s3://<bucket>/asff-json/`
-returns objects. Note also that `ProwlerMemberRole` already carries
-`securityhub:BatchImportFindings`, so the permission for that import is present in every
-assessed account whether or not the user intends to use it.
+**Check the prefix exists first.** It was absent in observed `Intermediate` and `Basic` runs,
+so do not offer the Security Hub route until `aws s3 ls s3://<bucket>/asff-json/` returns
+objects. Note also that `ProwlerMemberRole` already carries `securityhub:BatchImportFindings`
+in every assessed account, whether or not the user intends to use it.
