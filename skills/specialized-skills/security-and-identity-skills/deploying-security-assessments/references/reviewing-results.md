@@ -10,18 +10,24 @@ aws cloudformation describe-stack-resources --stack-name SATv2 \
 
 ## S3 layout
 
-The buildspec copies Prowler output into one prefix per format:
+The buildspec copies Prowler output into one prefix per format, but **only the formats
+Prowler actually emitted appear**. Do not treat a missing prefix as a failure — list what
+exists rather than expecting all of them:
 
-| Prefix | Contents |
-|---|---|
-| `csv/` | Per-account CSV findings, excluding compliance output. **This is what the Glue table reads.** |
-| `compliance/` | Compliance-framework CSVs |
-| `json/` | Native Prowler JSON |
-| `ocsf-json/` | OCSF-formatted JSON |
-| `asff-json/` | ASFF-formatted JSON, the format Security Hub ingests |
-| `html/` | Prowler's own HTML report |
-| `athena_results/` | Athena query output |
-| `reports/` | The automatic org summary CSV **and `satv2-dashboard.html`** — see below |
+| Prefix | Contents | Observed |
+|---|---|---|
+| `csv/` | Per-account CSV findings, excluding compliance output. **This is what the Glue table reads.** | Always |
+| `ocsf-json/` | OCSF-formatted JSON | Always |
+| `html/` | Prowler's own HTML report | Always |
+| `reports/` | The automatic org summary CSV **and `satv2-dashboard.html`** — see below | When `Reporting='true'` |
+| `compliance/` | Compliance-framework CSVs | Conditional — absent in an `Intermediate` multi-account run on the pinned Prowler |
+| `json/` | Native Prowler JSON | Conditional — absent unless Prowler emits that format |
+| `asff-json/` | ASFF-formatted JSON, the format Security Hub ingests | Conditional — absent unless Prowler emits that format |
+| `athena_results/` | Athena query output | Only once a query runs through the workgroup's own output location; the automatic summary writes to `reports/` instead |
+
+The first four are what a normal run produces. If the user needs ASFF for Security Hub
+import, confirm it exists before promising it — verify with
+`aws s3 ls s3://<bucket>/asff-json/` rather than assuming the prefix is populated.
 
 Confirm a scan actually produced findings before interpreting emptiness as a clean result:
 
@@ -118,3 +124,9 @@ The `asff-json/` prefix is ASFF, the format Security Hub ingests, so SATv2 outpu
 imported into Security Hub CSPM rather than reviewed only in Athena. Importing is a
 mutating action on another service and is outside this skill — surface the option and let
 the user decide.
+
+**Check the prefix exists first.** It was absent in an observed `Intermediate` multi-account
+run, so do not offer the Security Hub route until `aws s3 ls s3://<bucket>/asff-json/`
+returns objects. Note also that `ProwlerMemberRole` already carries
+`securityhub:BatchImportFindings`, so the permission for that import is present in every
+assessed account whether or not the user intends to use it.
