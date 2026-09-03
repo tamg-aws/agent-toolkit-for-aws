@@ -21,6 +21,7 @@ The buildspec copies Prowler output into one prefix per format:
 | `asff-json/` | ASFF-formatted JSON, the format Security Hub ingests |
 | `html/` | Prowler's own HTML report |
 | `athena_results/` | Athena query output |
+| `reports/` | The automatic org summary CSV **and `satv2-dashboard.html`** — see below |
 
 Confirm a scan actually produced findings before interpreting emptiness as a clean result:
 
@@ -29,7 +30,9 @@ aws s3 ls s3://<bucket>/csv/ --recursive --human-readable --summarize | tail -5
 ```
 
 An empty `csv/` prefix means the scan did not complete, not that nothing was found. Check
-the CodeBuild logs — see `references/troubleshooting.md`.
+the **`ProwlerCodeBuild`** project's logs — see `references/troubleshooting.md`. If `csv/`
+is populated but `reports/` is empty, the scan succeeded and the fault is in the reporting
+chain instead; check `ProwlerReportingCodeBuild`.
 
 ## Glue and Athena
 
@@ -44,7 +47,33 @@ Created only when `Reporting` is `'true'` (the default).
 - **Named query `Prowler organization summary`** (`qProwlerOrgSummary`) — counts findings
   per `check_id` across all assessed accounts.
 
-Run the shipped named query rather than writing one from scratch:
+## The automatic reporting chain
+
+When `Reporting` is `'true'`, a summary and dashboard are produced **without the operator
+doing anything**. Do not tell the user to run a query manually before checking whether this
+already ran. The chain, in order:
+
+1. The scan finishes → EventBridge rule `CodeBuildCompleteRunSummary` fires.
+2. `AthenaStartQueryLambda` runs a `SELECT` over the `prowler` table, writing to
+   `s3://<bucket>/reports`.
+3. A second EventBridge rule watches `reports/*.csv` for `Object Created`.
+4. That rule invokes `ProwlerReportingLambda`, which starts a **second CodeBuild project**,
+   `ProwlerReportingCodeBuild`.
+5. That project uploads `satv2-dashboard.html` into `reports/`.
+
+Two operator consequences:
+
+- **There are two CodeBuild projects.** `ProwlerCodeBuild` runs the scan;
+  `ProwlerReportingCodeBuild` builds the dashboard. When the dashboard is missing but the
+  scan succeeded, the failure is in the reporting project — look there, not in the scan
+  project's logs.
+- All of these resources are conditional on `Reporting`. With `Reporting='false'` none of
+  them exist, so `reports/`, the dashboard, Glue, and Athena are all absent and only the raw
+  per-format prefixes are populated.
+
+This is the fallback path, not the first step — check `reports/` for the automatic summary
+before querying by hand. When you do need an ad-hoc query, or the automatic chain did not
+run, use the shipped named query rather than writing one from scratch:
 
 ```bash
 aws athena list-named-queries --work-group <workgroup>

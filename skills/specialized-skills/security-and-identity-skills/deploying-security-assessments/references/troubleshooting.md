@@ -67,11 +67,36 @@ State the cost consequence of options 2 and 3 before applying them.
    separate plain stack from Step 2.
 3. `ProwlerAccountID` in the member-role template does not match the account CodeBuild
    actually runs in, so the role's trust policy rejects it.
-4. `ProwlerRole` in the solution stack does not match the role name the StackSet created.
+4. `ProwlerRole` was set to anything other than `ProwlerMemberRole`. See below — the
+   parameter does not work at any other value.
 
 The member role's trust policy names the scanning account root as principal and further
 restricts `aws:PrincipalArn` with `ArnEquals` to exactly the CodeBuild role ARN. Both the
 account and the role path must match; the role is created at path `/service-role/`.
+
+### `ProwlerRole` only works at its default
+
+The parameter looks configurable but is inert. Leave it at `ProwlerMemberRole`.
+
+- The CodeBuild role's `sts:AssumeRole` statement hardcodes the role as a literal —
+  `arn:${AWS::Partition}:iam::*:role/service-role/ProwlerMemberRole`. The wildcard is on
+  the **account** segment only, so a different role name does not match and the assume is
+  denied.
+- The buildspec hardcodes the path: `--role arn:$AWS_PARTITION:iam::$accountId:role/service-role/$PROWLER_ROLE`.
+  `$PROWLER_ROLE` supplies only the final name segment, so a role at path `/` can never be
+  reached.
+- The member-role template hardcodes `RoleName: ProwlerMemberRole` too.
+- `!Ref ProwlerRole` reaches nothing but a CodeBuild environment variable.
+
+**This kills the common "point it at our existing audit role" request.** A customer cannot
+substitute an existing read-only role unless that role happens to be named
+`ProwlerMemberRole` at path `/service-role/`. What they *can* do is author the role
+themselves at that exact name and path — SATv2 does not care which template created it —
+which keeps the permission set and change control in their hands.
+
+Note the misleading source: the sentence *"or specify a different ProwlerRole with the
+appropriate permissions"* appears in the **`MultiAccountScan`** parameter's description, not
+`ProwlerRole`'s. Customers reading the template take it at face value.
 
 Verify from the scanning account:
 

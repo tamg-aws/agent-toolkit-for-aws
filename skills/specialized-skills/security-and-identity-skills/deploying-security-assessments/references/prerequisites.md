@@ -187,8 +187,48 @@ aws iam get-role --role-name ProwlerMemberRole 2>/dev/null || echo "absent"
 aws organizations list-delegated-administrators
 ```
 
+Run these in **both** the management account and the scanning account. Checking only one
+account misses an existing deployment in the other — a SATv2 solution stack lives in the
+scanning account, not the management account, so a management-only sweep reports a false
+"clean install".
+
 If a `ProwlerMemberRole` or SATv2 stack already exists, report it and ask whether to
 reuse, update, or replace. Do not create a second copy.
+
+### The member accounts you cannot pre-check
+
+`ProwlerMemberRole` is a named IAM resource, so the StackSet **fails on any account that
+already has one** — and a service-managed StackSet gives you no credentials in member
+accounts to check first (`AWSServiceRoleForCloudFormationStackSetsOrgMember` is not
+operator-assumable). Handle it this way:
+
+1. Enumerate the targets so the blast radius is explicit:
+
+   ```bash
+   aws organizations list-accounts --query 'Accounts[?Status==`ACTIVE`].[Id,Name]' --output table
+   ```
+
+2. Pre-check only the accounts where you can actually assume a role — typically
+   `OrganizationAccountAccessRole` or `AWSControlTowerExecution`:
+
+   ```bash
+   aws sts assume-role --role-arn arn:aws:iam::<account>:role/OrganizationAccountAccessRole \
+     --role-session-name satv2-precheck >/dev/null 2>&1 \
+     && echo "assumable — check get-role here" || echo "not assumable — rely on step 3"
+   ```
+
+3. For the rest, deploy to **one OU first** and read the collision out of the operation
+   detail rather than guessing:
+
+   ```bash
+   aws cloudformation list-stack-instances --stack-set-name <name> \
+     --query 'Summaries[].{Account:Account,Status:Status,Reason:StatusReason}'
+   ```
+
+   An `AlreadyExists` reason on `ProwlerMemberRole` means that account was already set up.
+
+Keep `FailureToleranceCount=0`. Raising it to push past a collision hides which accounts
+were skipped and leaves the org half-deployed.
 
 ## Cost drivers to state before approval
 

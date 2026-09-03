@@ -19,8 +19,9 @@ description: >
 
 **STOP — this skill creates live infrastructure across multiple AWS accounts.** Before
 any deploy step, read `references/prerequisites.md` and complete the credential and
-topology checks. Deploying the solution stack **starts a scan immediately**; there is no
-separate trigger step. Do not run a deploy command until the user has approved it.
+topology checks. **Creating** the solution stack starts a scan immediately; there is no
+separate trigger step on create. Do not run a deploy command until the user has approved
+it.
 
 ## Overview
 
@@ -56,10 +57,22 @@ Two templates at the repository root:
    the active profile is the intended account — this solution spans three account roles
    and the wrong one fails late.
 
-3. **Deploying is running.** `2-sat2-codebuild-prowler.yaml` contains a
-   `Custom::CodeBuildStartBuild` resource that launches the scan when the stack is
-   created. Approval for the stack IS approval for the scan and its cost. Say so
-   explicitly before deploying; do not present the scan as a later, separate decision.
+3. **Creating the stack runs a scan; updating it does not.** On **create**,
+   `2-sat2-codebuild-prowler.yaml`'s `Custom::CodeBuildStartBuild` resource launches the
+   scan, so approval for the stack IS approval for the scan and its cost. Say so
+   explicitly before creating; do not present the scan as a later, separate decision.
+
+   On **update** no scan starts. The custom resource's only properties are `ServiceToken`
+   and `ProjectName`, and `ProjectName` resolves to the static literal `ProwlerCodeBuild`,
+   so changing parameters such as `MultiAccountScan` alters only environment variables and
+   sends no update to the resource. Its Lambda also acts only on `RequestType == 'Create'`
+   and no-ops otherwise. After an update you MUST start the build yourself:
+
+   ```bash
+   aws codebuild start-build --project-name ProwlerCodeBuild
+   ```
+
+   Treat that as its own approval point — it incurs the same scan cost as a create.
 
 4. **Read before write.** Every step in `references/satv2-deployment.md` has a
    read-before-write check. Run it and report current state before proposing the write.
@@ -73,9 +86,13 @@ Two templates at the repository root:
    the current release, and report the gap as a fact. Changing the pin breaks the Glue
    table schema. See `references/troubleshooting.md`.
 
-7. **Never widen the member role.** `ProwlerMemberRole` is read-only by design
-   (`SecurityAudit` + `ViewOnlyAccess` + a scoped inline policy). Do not add write
-   permissions to make a check pass.
+7. **Never widen the member role.** `ProwlerMemberRole` carries `SecurityAudit` +
+   `ViewOnlyAccess` plus an inline `ProwlerAdditions` policy. That inline policy is
+   read-only with exactly one exception — **`securityhub:BatchImportFindings`**, a write
+   action that lets SATv2 push its ASFF output into Security Hub in the assessed account.
+   Do not describe the role as purely read-only, and disclose that write when the role is
+   deployed into the management account. Do not add further permissions to make a check
+   pass.
 
 8. **State cost before scanning, not after.** Scan cost scales with tier, account count,
    and concurrency. Give the driver before the user approves. The findings bucket is

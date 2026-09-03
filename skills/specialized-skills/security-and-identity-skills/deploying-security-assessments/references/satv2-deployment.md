@@ -58,6 +58,20 @@ The resolved check lists ship in the repository as `checks/basic_checks.txt`,
 to regenerate them. Read those files for exact check membership rather than reciting it —
 they travel with the pinned Prowler version.
 
+**Read the tier list from the template you fetched, not from this table.** Upstream adds
+and removes tiers, so treat the template as authoritative:
+
+```bash
+aws cloudformation validate-template --template-body file://2-sat2-codebuild-prowler.yaml \
+  --query 'Parameters[?ParameterKey==`ProwlerScanType`]'
+grep -A6 '^  ProwlerScanType:' 2-sat2-codebuild-prowler.yaml
+```
+
+A caution for existing stacks: a stack deployed against an older template may hold a
+`ProwlerScanType` value the current template no longer offers. When updating such a stack,
+pass `ProwlerScanType` explicitly rather than reusing the previous value, so the update
+cannot carry forward a tier that is no longer defined in `Mappings`.
+
 `Full` has no upper bound other than `CodeBuildTimeout`. Before selecting it, multiply
 expected per-account duration by account count divided by `ConcurrentAccountScans`, and
 compare against the timeout. If it does not fit, raise `CodeBuildTimeout` or raise
@@ -193,3 +207,11 @@ Delete in reverse order, and state plainly what is retained:
 **The findings bucket is `DeletionPolicy: Retain` and is versioned.** It survives stack
 deletion and continues to bill. Tell the user its name and that deleting it is a separate,
 deliberate action. Do not delete it without explicit instruction.
+
+Two consequences worth stating when you report the bucket:
+
+- Because versioning is enabled, emptying it requires removing **every object version and
+  delete marker**. `aws s3 rb --force` leaves non-current versions behind and the bucket
+  keeps billing.
+- The bucket also carries `UpdateReplacePolicy: Retain`, so an update that *replaces* the
+  bucket strands the old one the same way a deletion does.
