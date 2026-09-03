@@ -20,7 +20,7 @@ exists rather than expecting all of them:
 | `ocsf-json/` | OCSF-formatted JSON | Always |
 | `html/` | Prowler's own HTML report | Always |
 | `reports/` | The automatic org summary CSV **and `satv2-dashboard.html`** — see below | When `Reporting='true'` |
-| `compliance/` | Compliance-framework CSVs | Conditional — absent in an `Intermediate` multi-account run on the pinned Prowler |
+| `compliance/` | Compliance-framework CSVs | Conditional — absent in observed `Intermediate` and `Basic` multi-account runs on the pinned Prowler |
 | `json/` | Native Prowler JSON | Conditional — absent unless Prowler emits that format |
 | `asff-json/` | ASFF-formatted JSON, the format Security Hub ingests | Conditional — absent unless Prowler emits that format |
 | `athena_results/` | Athena query output | Only once a query runs through the workgroup's own output location; the automatic summary writes to `reports/` instead |
@@ -52,6 +52,37 @@ Created only when `Reporting` is `'true'` (the default).
   `s3://<bucket>/athena_results`.
 - **Named query `Prowler organization summary`** (`qProwlerOrgSummary`) — counts findings
   per `check_id` across all assessed accounts.
+
+## Repeated scans accumulate and blend
+
+**This is the easiest way to report wrong numbers.** Every scan writes a new timestamped CSV
+per account into `csv/`; nothing is cleaned up. The Glue table is an unpartitioned
+`EXTERNAL_TABLE` over the whole `csv/` prefix, so it reads **every file from every run**, and
+the shipped `qProwlerOrgSummary` query has no run filter. Two scans of four accounts leave
+eight files, and the "organization summary" then counts both runs together with no
+indication it has done so.
+
+Observed: a second scan raised the file count from 4 to 8 and the automatic summary CSV from
+20.3 MiB to 21.7 MiB.
+
+Before reporting any count, establish which runs you are covering:
+
+```bash
+# how many files, and from how many distinct runs?
+aws s3 ls s3://<bucket>/csv/ --recursive
+```
+
+Then either scope the query or clear the prefix:
+
+- **Scope it.** The table has a `timestamp` column. Filter to the run you mean rather than
+  querying the whole table — the shipped named query does not do this for you.
+- **Or isolate runs.** Move or delete the previous run's CSVs out of `csv/` before
+  re-scanning, so the table only sees the current run. Deleting findings is a destructive
+  act on the user's data — confirm before doing it, and never do it implicitly as part of a
+  re-scan.
+
+State the scan timestamps your numbers cover whenever you present findings after more than
+one scan.
 
 ## The automatic reporting chain
 
@@ -111,7 +142,8 @@ table definition. Report that as a version mismatch rather than editing the tabl
 - **Report scan scope explicitly.** Say how many accounts were scanned and which. If
   `MultiAccountScan` was `'false'`, say plainly that only the scanning account was
   assessed — a summary that silently covers one account reads as if it covered the
-  organization.
+  organization. Equally, say which scan run(s) the numbers come from: the Glue table blends
+  every run in `csv/` unless you filtered on `timestamp`.
 - **Do not suppress or dismiss findings.** Present what the scan found. Filtering to a
   severity for readability is fine if you say so.
 - **Findings can contain sensitive detail** — resource ARNs, account IDs, network
