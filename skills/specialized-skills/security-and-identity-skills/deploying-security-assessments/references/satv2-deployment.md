@@ -134,8 +134,12 @@ aws cloudformation create-stack \
     ParameterKey=MultiAccountScan,ParameterValue=true \
     ParameterKey=ConcurrentAccountScans,ParameterValue=Three \
     ParameterKey=CodeBuildTimeout,ParameterValue=300 \
-  --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+  --capabilities CAPABILITY_NAMED_IAM
 ```
+
+Both templates declare only `CAPABILITY_NAMED_IAM`. Confirm with
+`validate-template --query Capabilities` rather than assuming, and pass no more than the
+template requires.
 
 Verify, then follow the build:
 
