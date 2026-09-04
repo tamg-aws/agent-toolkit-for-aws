@@ -128,12 +128,21 @@ delegated admin:
 aws cloudformation activate-organizations-access --profile <management_profile>
 ```
 
-**Use the CloudFormation call, not the Organizations one.** The Organizations user guide
-states this trusted access can only be enabled through CloudFormation StackSets. Running
-`aws organizations enable-aws-service-access --service-principal member.org.stacksets.cloudformation.amazonaws.com`
-does add that principal to `list-aws-service-access-for-organization`, but it does **not**
-flip `describe-organizations-access` — observed still `DISABLED` after 60 seconds of polling.
-Only `activate-organizations-access` does, within about 15 seconds.
+**That one call is all you need — do not also run the Organizations one.** The relationship
+between the two APIs is one-directional, confirmed from a clean `DISABLED` state with the
+service principal absent:
+
+- `cloudformation activate-organizations-access` flips `describe-organizations-access` to
+  `ENABLED` within about 15 seconds **and registers
+  `member.org.stacksets.cloudformation.amazonaws.com` on the Organizations side by itself**.
+- `organizations enable-aws-service-access --service-principal member.org.stacksets.cloudformation.amazonaws.com`
+  registers that principal but does **not** flip `describe-organizations-access` — observed
+  still `DISABLED` after 60 seconds of polling.
+
+This matches the Organizations user guide, which states the trusted access can only be enabled
+through CloudFormation StackSets. Running the Organizations call first is harmless but
+redundant, and its apparent success is misleading: the principal shows up in
+`list-aws-service-access-for-organization` while StackSets is still unusable.
 
 Re-run the check and do not begin Step 1 until it returns `ENABLED`.
 
