@@ -57,6 +57,11 @@ Then either scope the query or isolate runs:
   findings is destructive to the user's data — confirm first, and never do it implicitly as
   part of a re-scan.
 
+The same hazard applies to any **local directory you download into**. `aws s3 cp --recursive`
+into a directory that already holds CSVs from an earlier run — or a different organization —
+blends them just as the Glue table does; observed producing a six-account summary for a
+two-account organization. Download each run into a fresh, empty directory.
+
 State the scan timestamps your numbers cover whenever you present findings after more than
 one scan.
 
@@ -80,25 +85,35 @@ The stack grants table permissions through Lake Formation, and the data lake has
 hold `SELECT`. **Any other principal gets an Athena `AccessDenied` that no IAM policy
 explains** — IAM admin is not sufficient.
 
-Check whether you can grant:
+**If you deployed the stack, you already hold `SELECT` — just query.** CloudFormation created
+the Glue database and table under your session, and Lake Formation grants the creating
+principal `ALL`, `ALTER`, `DELETE`, `DESCRIBE`, `DROP`, `INSERT` and `SELECT` implicitly.
+Observed in two organizations: the deployer was not a data lake admin in either, and Athena
+succeeded with no grant. Confirm rather than assume:
 
 ```bash
-aws lakeformation get-data-lake-settings --profile <scanning_profile> \
-  --query 'DataLakeSettings.DataLakeAdmins[].DataLakePrincipalIdentifier' --output text
+aws lakeformation list-permissions --profile <scanning_profile> \
+  --resource '{"Table":{"CatalogId":"<scanning_account_id>","DatabaseName":"<bucket>","Name":"prowler"}}' \
+  --query 'PrincipalResourcePermissions[].[Principal.DataLakePrincipalIdentifier,Permissions]' --output text
 ```
 
-If you deployed the stack, or your principal appears in that list, grant yourself `SELECT`:
+Do not read the data-lake-admin list as an access list. Being an admin governs whether you can
+**grant others**, not whether you can query; a deployer who is not an admin still queries fine,
+and a non-deployer who is an admin still needs a grant.
+
+**Granting someone else** `SELECT` is the case that needs a Lake Formation write, and only the
+deployer or a data lake admin can perform it:
 
 ```bash
 aws lakeformation grant-permissions --profile <scanning_profile> \
-  --principal DataLakePrincipalIdentifier=<your_role_arn> \
+  --principal DataLakePrincipalIdentifier=<their_role_arn> \
   --resource '{"Table":{"CatalogId":"<scanning_account_id>","DatabaseName":"<bucket>","Name":"prowler"}}' \
   --permissions SELECT
 ```
 
-Otherwise you cannot self-grant — `GrantPermissions` itself fails with a Lake Formation
-`AccessDenied`. Escalate to the deployer or a data lake admin rather than trying to fix it
-with IAM.
+If you are neither, you cannot self-grant — `GrantPermissions` itself fails with a Lake
+Formation `AccessDenied`. Escalate to the deployer or a data lake admin rather than trying to
+fix it with IAM.
 
 Lake Formation governs metadata only here; no S3 data locations are registered, so object
 reads still fall back to IAM.

@@ -54,6 +54,21 @@ aws sts get-caller-identity --profile <management_profile>
 aws sts get-caller-identity --profile <scanning_profile>
 ```
 
+**If management credentials exist only as environment variables** (`AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) and there is no profile to name, the management
+commands have to run with no `--profile` — which is exactly the ambient default this section
+warns against. Two mitigations, both mandatory in that case:
+
+- Run `aws sts get-caller-identity` immediately before **each** management-account write and
+  confirm the account ID, not just once at the start. Temporary credentials expire mid-run.
+- Check whether `AWS_PROFILE` is also set. Explicit keys take precedence over it only while they
+  are present and unexpired; if they are cleared, every bare `aws` call silently falls through
+  to whatever `AWS_PROFILE` names — observed pointing at an account in a **different
+  organization**. That is the "stack in the wrong place" failure with no error to catch it.
+
+Writing the env-var credentials into a named profile removes both hazards and is the better
+fix when it is available.
+
 ### AWS MCP server, if in use
 
 The `aws-core` plugin ships an `aws-mcp` server (`mcp-proxy-for-aws-cli`). Three settings
@@ -370,17 +385,34 @@ it:
   change-set path: `create-change-set --change-set-type CREATE` against a stack name that does
   not yet exist runs every validation check and provisions nothing.
 
-Two assertions worth making on these templates specifically while you are there:
+Three things to know about these templates specifically while you are there:
 
 - `validate-template --query Capabilities` returns **`CAPABILITY_NAMED_IAM` only**, for both
   templates. Each creates a named IAM role; neither needs `CAPABILITY_AUTO_EXPAND`.
 - The solution template's change set lists a **`Custom::CodeBuildStartBuild`** resource. That
   is the resource that makes creating the stack start a scan, so showing it in the plan is the
   cheapest way to demonstrate to the user that the cost is real *before* they approve.
+- **cfn-lint can fail the unmodified upstream template on a false positive.** Its bundled
+  resource schemas lag the live CloudFormation registry, so a property upstream added recently
+  surfaces as `E3002 Additional properties are not allowed ('<Property>' was unexpected)` and a
+  non-zero exit. Do not treat that exit as a gate failure on its own — adjudicate against the
+  live registry first:
 
-Follow that SOP's cleanup guidance: a `CREATE`-type change set leaves the stack in
-`REVIEW_IN_PROGRESS`, so delete the change set and then the stack, or the next create against
-that name is blocked.
+  ```bash
+  aws cloudformation describe-type --profile <scanning_profile> \
+    --type RESOURCE --type-name AWS::CodeBuild::Project --query Schema --output text \
+    | grep -c '"<Property>"'
+  ```
+
+  A non-zero count means the registry knows the property and cfn-lint is behind; the change-set
+  path below is the authoritative check because it validates against the registry. Current
+  instance: `HostKernel` on `AWS::CodeBuild::Project`, added upstream in 2026-08/09, which
+  cfn-lint 1.46 rejects twice while the change set accepts it.
+
+Run the dry run against a **throwaway stack name** — `SATv2-preflight`, not `SATv2` — so the
+shell it leaves behind can never block the real create, even if cleanup is skipped or fails.
+Then follow that SOP's cleanup guidance: a `CREATE`-type change set leaves the stack in
+`REVIEW_IN_PROGRESS` with zero resources, so delete the change set and then the stack.
 
 ## Cost drivers to state before approval
 

@@ -34,7 +34,7 @@ aws logs filter-log-events --profile <scanning_profile> \
   --filter-pattern AccessDenied --query 'events[].message' --output text | grep -c .
 ```
 
-Two traps in reading those logs:
+Three traps in reading those logs:
 
 - **The buildspec's own source is echoed into the log.** Lines containing unexpanded
   `$accountId` or `$AWS_ACCOUNT_ID` are script text, not events. That is why the failure
@@ -42,6 +42,13 @@ Two traps in reading those logs:
   phantom failures.
 - **Do not use `--query 'length(events)'`.** The CLI paginates and prints a count per page,
   so a real total of 16 can display as `0 0 16 0`. Pipe messages to `grep -c` instead.
+- **An empty assumed-account list means the command did not run, not that no accounts were
+  assumed.** The pipes into `grep` above turn any CLI failure — a mistyped flag, an expired
+  token, a mis-expanded shell variable — into a clean-looking `0 accounts, 0 failures,
+  0 AccessDenied`, with the error itself lost to stderr. Observed three times, once with the
+  usage-error text itself counted as "6 AccessDenied". Before trusting any zero, confirm the
+  first command printed the accounts you expected; if it printed nothing, run it again without
+  the pipe and read the error.
 
 Compare the assumed-account list against the accounts you expected. Attempted minus landed
 is the unreachable set. Do **not** count distinct IDs in `csv/` for this — that prefix is

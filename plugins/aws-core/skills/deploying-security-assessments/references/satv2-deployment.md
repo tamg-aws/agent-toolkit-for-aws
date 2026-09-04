@@ -79,6 +79,22 @@ are about 50% higher than the template claims. Size against the right-hand colum
 `Full` run on the pinned version logged `572/572` checks, which matches `full_checks.txt`
 exactly.
 
+Choose the tier by the question being asked, not by the bill. What each one is for:
+
+- **`Basic`** is a pipeline smoke test — 13 checks prove the roles, discovery, and reporting
+  chain work. It is the right tier for a pilot or a first run in a new organization, and the
+  wrong one for answering "are my resources configured to best practice": a clean `Basic`
+  result says almost nothing about posture.
+- **`Intermediate`**, the default, is the posture-assessment tier — every critical and high
+  check.
+- **`Full`** adds the medium and low checks and is the only tier observed to emit the
+  `compliance/` framework CSVs.
+
+On a small organization the cost difference between tiers is cents, because CodeBuild's fixed
+overhead dominates. If the user has stated a tier or a cost ceiling, follow it; otherwise
+recommend the tier that answers their question and name the cost, rather than defaulting to
+the cheapest.
+
 Resolved check lists ship as `checks/basic_checks.txt`, `checks/intermediate_checks.txt` and
 `checks/full_checks.txt`, with `checks/get-checks.sh` to regenerate them. Read those for
 exact membership — they travel with the pinned Prowler version. Each file also ends with its
