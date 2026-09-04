@@ -144,7 +144,8 @@ Fetch validation results from the `describe-events` API.
 - You MUST NOT use `describe-stack-events` because the legacy stack events API does NOT return validation results — it only surfaces resource provisioning events after execution
 - You MUST filter events where `EventType` equals `VALIDATION_ERROR` because these are the validation results
 - For each validation event, You MUST extract:
-  - `ValidationName` — known values include `PROPERTY_VALIDATION`, `RESOURCE_NAME_CONFLICT`, `S3_BUCKET_EMPTINESS`, `SERVICE_QUOTA`, `CONFIG_RECORDER_CONFLICT`, `ECR_REPOSITORY_DELETE_READINESS`. CloudFormation may add new validation checks over time; handle any unknown `ValidationName` by presenting it with its `ValidationStatusReason`
+  - `ValidationName` — known values include `PROPERTY_VALIDATION`, `NAME_CONFLICT_VALIDATION`, `S3_BUCKET_EMPTINESS`, `SERVICE_QUOTA`, `CONFIG_RECORDER_CONFLICT`, `ECR_REPOSITORY_DELETE_READINESS`. Only `NAME_CONFLICT_VALIDATION` has been confirmed against a live `describe-events` response (an `AWS::IAM::Role` name collision on change-set creation); the rest are as documented and unconfirmed, so match on the value you actually receive rather than on this list. CloudFormation may add new validation checks over time; handle any unknown `ValidationName` by presenting it with its `ValidationStatusReason`
+  - The response key is `OperationEvents`, not `Events` — a JMESPath filter rooted at `Events[]` silently returns nothing and reads as "no validation errors"
   - `ValidationStatus` — `FAILED` or `PASSED`
   - `ValidationStatusReason` — detailed error message
   - `ValidationPath` — property path in the template where the error occurred (may be absent for account-level checks such as service quotas)
@@ -210,7 +211,7 @@ Retrieved via: aws cloudformation describe-events --change-set-name arn:aws:clou
 
 Validation results:
   ✓ PROPERTY_VALIDATION: PASSED
-  ✓ RESOURCE_NAME_CONFLICT: PASSED
+  ✓ NAME_CONFLICT_VALIDATION: PASSED
   ✓ S3_BUCKET_EMPTINESS: PASSED
   ✓ SERVICE_QUOTA: PASSED
 
@@ -234,7 +235,7 @@ Retrieved via: aws cloudformation describe-events --change-set-name arn:aws:clou
       - Queue: !GetAtt MyQueue.Arn
         Event: s3:ObjectCreated:*   # Required property was missing
 
-✗ RESOURCE_NAME_CONFLICT (FAIL):
+✗ NAME_CONFLICT_VALIDATION (FAIL):
   LogicalResourceId: MyDynamoDBTable
   ValidationPath: /Resources/MyDynamoDBTable/Properties/TableName
   ValidationStatusReason: A table named "users-table" already exists in this account/region.
