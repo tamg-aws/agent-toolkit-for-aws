@@ -169,6 +169,14 @@ Do not widen the member role or loosen its trust policy to resolve this. Fix the
 
 The parameter looks configurable but is inert. Leave it at `ProwlerMemberRole`.
 
+What a non-default value looks like, observed with `ProwlerRole=ProwlerAuditRole`: the build
+reaches `FAILED` in about two minutes (this is the every-account case, so unlike the partial
+failures described at the top of this file the build status *does* reflect it); the log
+carries `CRITICAL: AWSAssumeRoleError[1012]: AWS assume role error - An error occurred
+(AccessDenied) when calling the AssumeRole operation`; the coverage check reports zero
+assumed accounts and one `Prowler scan failed for account` line per account; no `Scan
+completed` line appears, `csv/` gains nothing, and the reporting chain never fires.
+
 - The CodeBuild role's `sts:AssumeRole` statement hardcodes the role as a literal —
   `arn:<partition>:iam::*:role/service-role/ProwlerMemberRole`. The wildcard covers the
   **account** segment only, so a different role name does not match and the assume is denied.

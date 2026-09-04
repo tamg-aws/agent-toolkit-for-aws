@@ -23,8 +23,8 @@ Only the formats Prowler actually emitted appear. Do not treat a missing prefix 
 | `html/` | Prowler's own HTML report | Always |
 | `reports/` | The automatic full export, its `.metadata` sidecar, and `satv2-dashboard.html` | When `Reporting='true'` |
 | `compliance/` | Compliance-framework CSVs | Tier-dependent — present in an observed `Full` run (SOC2, CIS and other framework CSVs); absent in observed `Intermediate` and `Basic` runs |
-| `json/` | Native Prowler JSON | Conditional |
-| `asff-json/` | ASFF-formatted JSON | Not produced under the default `ProwlerOptions` — absent in observed `Basic`, `Intermediate` **and** `Full` runs |
+| `json/` | Native Prowler JSON | **Never on Prowler 5** — the pinned version has no plain `json` output format, so the buildspec's copy step for this prefix finds nothing |
+| `asff-json/` | ASFF-formatted JSON | Only when `ProwlerOptions` includes `-M … json-asff` (see below) — absent under the default options in observed `Basic`, `Intermediate` **and** `Full` runs |
 | `athena_results/` | Athena query output | Only for queries that use the workgroup's own output location; the automatic export overrides it to `reports/` |
 
 The `csv/` files use `;` as the delimiter, not `,` — the Glue SerDe is `OpenCSVSerde` with
@@ -191,10 +191,20 @@ does copy `*.asff.json` into `asff-json/`, and `ProwlerOptions` is passed verbat
 flag, so Prowler emits only its default set. That is also why `csv/`, `ocsf-json/` and `html/`
 are the three `Always` prefixes above.
 
-Enabling ASFF therefore means adding an output-format flag to `ProwlerOptions`. **This is
-untested — verify the flag against the pinned Prowler version before promising it.** Note also
-that it is a scan parameter, so it requires a stack update *and* a fresh `start-build`; the
-update alone starts no scan.
+Enabling ASFF means adding Prowler's output-format flag to `ProwlerOptions`. Verified against
+the pinned 5.11.0 source and live: the flag is `-M` (`--output-formats`), its allowed values
+are `csv`, `json-asff`, `json-ocsf` and `html`, and its default is `csv json-ocsf html` — which
+is exactly the three `Always` prefixes. **`-M` replaces the default list rather than adding to
+it**, so name every format you still want:
+
+```text
+ProwlerOptions = aws --ignore-exit-code-3 -M csv json-asff json-ocsf html
+```
+
+Observed: after that update and a fresh build, `asff-json/` held one `.asff.json` per account
+with no upload errors, and `csv/`, `ocsf-json/` and `html/` were still produced. There is no
+plain `json` value, which is why `json/` stays empty. It is a scan parameter, so it requires a
+stack update *and* a fresh `start-build`; the update alone starts no scan.
 
 Note also that `ProwlerMemberRole` already carries `securityhub:BatchImportFindings` in every
 assessed account, whether or not the user intends to use it.

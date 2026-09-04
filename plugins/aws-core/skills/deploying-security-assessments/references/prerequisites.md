@@ -201,8 +201,15 @@ administrator for this service. Call the AWS API EnableAWSServiceAccess first.
 Do not let that message divert you to `organizations enable-aws-service-access`.
 `cloudformation activate-organizations-access` satisfies the constraint — observed: the same
 register call failed while the status was `DISABLED` and succeeded immediately after
-activating. The Organizations call would leave StackSets unusable regardless, for the reason
-given above.
+activating.
+
+The trap is that the Organizations call **also** satisfies it. Observed from a clean state:
+`enable-aws-service-access` alone leaves `describe-organizations-access` at `DISABLED`, yet
+`register-delegated-administrator` then succeeds and the scoped list shows the account
+`ACTIVE` — while every `--call-as DELEGATED_ADMIN` call from it still fails with
+`ValidationError`. Following the error message literally produces a registered StackSets
+delegated administrator in an organization where StackSets is still deactivated: it looks
+like progress and is not.
 
 ```bash
 aws organizations register-delegated-administrator --profile <management_profile> \
@@ -358,8 +365,8 @@ operator-assumable). Handle it this way:
      && echo "assumable — check get-role here" || echo "not assumable — rely on step 3"
    ```
 
-3. For the rest, deploy to **one OU first** and read the collision out of the operation
-   detail rather than guessing:
+3. For the rest, deploy to **one OU first** and watch for the collision — but know what it
+   actually looks like:
 
    ```bash
    aws cloudformation list-stack-instances --profile <management_profile> \
@@ -367,7 +374,37 @@ operator-assumable). Handle it this way:
      --query 'Summaries[].{Account:Account,Status:Status,Reason:StatusReason}'
    ```
 
-   An `AlreadyExists` reason on `ProwlerMemberRole` means that account was already set up.
+   **The operation detail does not name the collision.** A pre-existing `ProwlerMemberRole`
+   produces instance status `OUTDATED`/`FAILED` with the generic reason
+   `ResourceStatusReason:Validation failed with 1 error(s). Call DescribeEvents to retrieve
+   the full list of issues…` — no `AlreadyExists`, no role name. Observed twice. From the
+   management account it is indistinguishable from any other pre-deployment validation
+   failure, and `describe-events --operation-id <stack-set-operation>` returns
+   `Operation ID does not exist`.
+
+   The detail exists only in the member account, and only briefly: CloudFormation creates the
+   instance stack, fails validation, and deletes it, so `describe-events --stack-name <name>`
+   says the stack does not exist. Where you *do* hold member credentials, query by **ARN**:
+
+   ```bash
+   ARN=$(aws cloudformation list-stacks --profile <member_profile> \
+     --query "StackSummaries[?starts_with(StackName,'StackSet-<stack_set_name>-')].StackId" \
+     --output text | head -1)
+   aws cloudformation describe-events --profile <member_profile> --stack-name "$ARN" \
+     --query 'OperationEvents[?EventType==`VALIDATION_ERROR`].[ValidationName,LogicalResourceId,ValidationStatusReason]' \
+     --output text
+   ```
+
+   A collision reads `NAME_CONFLICT_VALIDATION` with reason `Resource of type
+   'AWS::IAM::Role' with identifier 'ProwlerMemberRole' already exists.` Note the logical ID
+   is `ProwlerIntegrationCodeBuildRole`, not `ProwlerMemberRole` — filtering events on the
+   role name finds nothing. Without member credentials, the pre-check in step 2 is the only
+   way to know in advance.
+
+   To converge afterwards: `delete-stack-instances --no-retain-stacks` clears the `OUTDATED`
+   instance; then either remove the pre-existing role and rerun `create-stack-instances`
+   (observed `SUCCEEDED`/`CURRENT`), or keep the existing role and exclude that account with
+   `AccountFilterType=DIFFERENCE`.
 
 Keep `FailureToleranceCount=0`. Raising it to push past a collision hides which accounts
 were skipped and leaves the org half-deployed.
@@ -421,8 +458,14 @@ Give the user these drivers before they approve the scan, not afterward:
 - **CodeBuild minutes** — the dominant cost. Scales with scan tier, account count, and
   `ConcurrentAccountScans` (which also selects a larger compute type: `Three` uses
   `BUILD_GENERAL1_SMALL`, `Six` uses `BUILD_GENERAL1_MEDIUM`).
-- **S3 storage** — findings are written as CSV, JSON, OCSF JSON, ASFF JSON, and HTML.
-  The findings bucket is versioned and has `DeletionPolicy: Retain`, so it survives stack
-  deletion and keeps billing until deleted deliberately.
+- **S3 storage** — by default findings are written as CSV, OCSF JSON and HTML; ASFF only
+  when `ProwlerOptions` selects it, and plain JSON never on Prowler 5 (see
+  `references/reviewing-results.md`). Volume is dominated by formats the Glue table never
+  reads: one `Full` run across four small accounts (24,588 findings) plus three lighter runs
+  left a 3.0 GB bucket with 210 object versions, of which `ocsf-json/` and `compliance/`
+  were 1.4 GB each and `csv/` — the only prefix Athena queries — was 49 MB. Size scales with
+  finding count, and `compliance/` appears only at `Full`. The bucket is versioned and has
+  `DeletionPolicy: Retain`, so it survives stack deletion and keeps billing until deleted
+  deliberately.
 - **Athena and Glue** — only when `Reporting` is `'true'` (the default). Athena bills per
   byte scanned.

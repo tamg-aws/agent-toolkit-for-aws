@@ -112,6 +112,9 @@ One measured anchor for that formula: a `Full` scan on the pinned Prowler took r
 **35 minutes per account** — but that was on very small accounts (937 to 15,466 findings
 each), n=1. Treat it as a floor rather than an estimate. Accounts with more resources take
 proportionally longer, so scale from your own account sizes instead of reusing the number.
+For the lighter tiers on even smaller accounts (under 100 `Basic` findings each, n=2):
+`Basic` ran 13 checks in about 1¼ minutes per account and `Intermediate` ran 171 in about
+2½, with a 7-minute wall clock for two accounts including the CodeBuild install phase.
 
 If an existing stack was deployed against an older template, it may hold a
 `ProwlerScanType` value the current template no longer offers. Pass `ProwlerScanType`
@@ -172,8 +175,12 @@ aws cloudformation list-stack-instances --profile <management_profile> \
   --query 'Summaries[?Status!=`CURRENT`].[Account,Status,StatusReason]' --output text
 ```
 
-An empty second result means every instance is current. A `StatusReason` mentioning the
-role already existing means that account was already set up — reuse it rather than forcing.
+An empty second result means every instance is current. A `StatusReason` reading
+`Validation failed with 1 error(s). Call DescribeEvents…` is what a pre-existing
+`ProwlerMemberRole` looks like — the message never names the role or says `AlreadyExists`,
+and from the management account it cannot be told apart from other validation failures. See
+"The member accounts you cannot pre-check" in `references/prerequisites.md` for how to
+confirm it and how to converge.
 
 Keep `FailureToleranceCount=0`. Raising it to push past a collision hides which accounts
 were skipped and leaves the organization half-deployed.
