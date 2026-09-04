@@ -125,8 +125,13 @@ Read `references/prerequisites.md` and confirm all of the following. Any missing
 stops the deployment partway through:
 
 - Which account is the **management account**, and whether the user can obtain
-  credentials for it. Management-account access is required at **four** points and is not
-  optional.
+  credentials for it. Management-account access is required at several points — the
+  StackSet, the management account's own role stack, trusted-access activation, any
+  delegated-administrator registration or delegation policy, and reversing each at
+  cleanup — and is not optional. `references/prerequisites.md` enumerates them.
+- Whether `aws cloudformation describe-organizations-access` returns `ENABLED`. If not,
+  activating trusted access is a management-account, organization-wide write that needs
+  approval under rule 1 before Step 1 can run.
 - Which account will be the **scanning account** (the workshop uses the audit account).
 - Whether the scanning account can call `aws organizations list-accounts`. If not, an
   Organizations delegation policy is required first.
@@ -142,30 +147,52 @@ stops the deployment partway through:
 | "where are my results", "query the findings", "Athena", "dashboard" | `references/reviewing-results.md` |
 | "the build failed", "list-accounts error", "timeout", "parameter error" | `references/troubleshooting.md` |
 | "remove SATv2", "clean up" | `references/satv2-deployment.md`, cleanup section |
+| "use our existing audit role", "point it at our role", `ProwlerRole` | `references/troubleshooting.md`, "`ProwlerRole` only works at its default" |
+| "re-run the scan", "we added accounts", "scan again" | `references/satv2-deployment.md`, "Re-running after accounts are added" — an update starts no scan |
+| "send findings to Security Hub", "ASFF", "export the findings" | `references/reviewing-results.md`, "Feeding findings elsewhere" |
+| "the update failed", "rolled back", "already exists", role collision | `references/troubleshooting.md`, "A stack update failed or rolled back"; `references/prerequisites.md`, "The member accounts you cannot pre-check" |
+| "trusted access", "StackSets is DISABLED", "not a delegated administrator", `--call-as` errors | `references/prerequisites.md`, identity check and "Two different kinds of delegated administrator" |
+| "cfn-lint fails", "validate the templates", "dry run" | `references/prerequisites.md`, "Validate both templates before deploying" |
+| "Athena AccessDenied", "can't query the table" | `references/reviewing-results.md`, "Lake Formation may govern this table" |
 
-## Three traps to raise proactively
+## Traps to raise proactively
 
-These are defects in the deployment path that a user following the workshop text will hit.
-Raise them before the user encounters them, not after.
+These are defects in the deployment path that a user following the workshop text or the
+upstream README will hit. Raise them before the user encounters them, not after.
 
 1. **`MultiAccountScan` defaults to `'false'`.** A default deploy scans **only the
    scanning account**, not the organization. A user can believe they assessed every
    account and have assessed one. Confirm intent explicitly.
 
-2. **The workshop text has the wrong parameter name.** It calls the member-role parameter
-   `AuditAccountId`. The real name is **`ProwlerAccountID`** (pattern `\d{12}`, default
-   `'012345678910'`). Following the prose produces a validation error.
+2. **The workshop text has the wrong parameter name.** As observed in 2026-09, it calls the
+   member-role parameter `AuditAccountId`. The real name is **`ProwlerAccountID`** (pattern
+   `\d{12}`, default `'012345678910'`). Following the prose produces a validation error.
+   Confirm against the current workshop page before telling a user their documentation is
+   wrong — it may have been corrected since.
 
 3. **The `Full` tier is unbounded.** It passes an empty filter, so runtime is governed
    only by `CodeBuildTimeout` (default 300 minutes). On a large organization this is the
    tier that hits the ceiling. Size it against account count before selecting it.
+
+4. **The README's "defaults" are not the template's defaults.** The upstream README says the
+   defaults run a `Basic` scan of a single account with reporting optional. The template's
+   defaults are `ProwlerScanType=Intermediate` and `Reporting='true'` — a 171-check posture
+   scan plus the Glue, Athena and reporting chain. Never accept "use the defaults" without
+   naming both values back to the user.
+
+5. **A pilot's `MultiAccountListOverride` outlives the pilot.** The skill's own advice is to
+   pilot against two or three accounts by setting the override. Left in place, every later
+   scan is silently capped at those accounts while `MultiAccountScan='true'` makes it look
+   organization-wide and the build reports `SUCCEEDED`. Read the override before trusting
+   any coverage claim; clear it with an update and a fresh `start-build`.
 
 ## Not covered
 
 - **SRA Verify**, the other tool in the SHIP workshop, is not covered by this skill.
   It is a different tool (`awslabs/sra-verify`, not Prowler) answering a different
   question — whether the organization implements the AWS Security Reference Architecture.
-  Point the user at the workshop for it.
+  Point the user at the workshop for it:
+  <https://catalog.us-east-1.prod.workshops.aws/workshops/3bd6e4da-265a-4c79-ab47-639b7ef23c9d/en-US>
 - **The SHIP advisory engagement** is a separate, meetings-based AWS program with nothing
   to deploy. It is an optional follow-on for interpreting findings, not a prerequisite.
 - **Remediating** findings. This skill deploys the assessment and retrieves results. It

@@ -34,7 +34,7 @@ aws cloudformation validate-template --profile <scanning_profile> \
 
 | Parameter | Default | Notes |
 |---|---|---|
-| `ProwlerAccountID` | `'012345678910'` | The **scanning** account. Pattern `\d{12}`. The workshop text calls this `AuditAccountId` — that name is wrong. |
+| `ProwlerAccountID` | `'012345678910'` | The **scanning** account. Pattern `\d{12}`. The workshop text called this `AuditAccountId` as of 2026-09 — that name is wrong. |
 
 `2-sat2-codebuild-prowler.yaml`:
 
@@ -124,7 +124,8 @@ explicitly on any update rather than reusing the previous value.
 
 ### Step 1 — member roles to member accounts (management account)
 
-Read first — this sweep must include failed stacks, which the default filter hides:
+Read first — is a member-role StackSet already present? From a delegated administrator add
+`--call-as DELEGATED_ADMIN`, or this returns empty:
 
 ```bash
 aws cloudformation list-stack-sets --profile <management_profile> --status ACTIVE \
@@ -160,6 +161,15 @@ aws cloudformation create-stack-instances --profile <management_profile> \
   --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1
 ```
 
+Under the default strict concurrency mode `MaxConcurrentCount` cannot exceed
+`FailureToleranceCount + 1`, so the preferences above deploy **one account at a time** — a
+minute or two each — and Step 4 cannot start until the last one lands. For a large
+organization use
+`--operation-preferences ConcurrencyMode=SOFT_FAILURE_TOLERANCE,FailureToleranceCount=0,MaxConcurrentPercentage=25`
+instead: the soft mode keeps stop-at-first-failure while deploying in parallel. State the
+expected rollout time to the user either way. The strict settings were exercised live by this
+skill's authors; the soft-mode alternative is taken from the CLI documentation and was not.
+
 `--auto-deployment` and `--call-as DELEGATED_ADMIN` are valid only with
 `--permission-model SERVICE_MANAGED`. Auto-deployment is what covers accounts added later.
 
@@ -182,15 +192,31 @@ and from the management account it cannot be told apart from other validation fa
 "The member accounts you cannot pre-check" in `references/prerequisites.md` for how to
 confirm it and how to converge.
 
-Keep `FailureToleranceCount=0`. Raising it to push past a collision hides which accounts
-were skipped and leaves the organization half-deployed.
+Keep `FailureToleranceCount=0`, but for the right reason: it stops the operation at the first
+failure so you can read `list-stack-instances` and converge deliberately. It is *not* what
+makes skipped accounts visible — the `Status!=CURRENT` query above does that at any tolerance
+— and a halted operation *is* a half-deployed organization until you converge it, which is
+why the convergence steps in `references/prerequisites.md` exist.
 
-Rollback: `delete-stack-instances --no-retain-stacks`, then `delete-stack-set`.
+Rollback: `delete-stack-instances --no-retain-stacks`, then `delete-stack-set`. Both are
+approval-gated writes under rule 1.
 
 ### Step 2 — member role to the management account (management account)
 
 StackSets do not reach the management account, so deploy the **same template** there as a
 plain stack. Without this, the management account cannot be assessed.
+
+Read first — does the management account already have the role or the stack?
+
+```bash
+aws iam get-role --profile <management_profile> --role-name ProwlerMemberRole >/dev/null 2>&1 \
+  && echo "present" || echo "absent"
+aws cloudformation describe-stacks --profile <management_profile> \
+  --stack-name SATv2-ProwlerMemberRole-Management --query 'Stacks[0].StackStatus' --output text 2>&1
+```
+
+`present`, or any status other than a "does not exist" error, means this step was already
+done: report it and reuse rather than creating a second copy.
 
 ```bash
 aws cloudformation create-stack --profile <management_profile> \
@@ -218,6 +244,18 @@ failure surfaces mid-build, after the stack exists.
 
 **Creating this stack starts the scan.** Confirm the user is approving the scan and its cost,
 not only the infrastructure. State the tier, the account count and the concurrency first.
+
+Read first — the solution stack, or its fixed-name resources under some other stack name:
+
+```bash
+aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
+  --query 'Stacks[0].StackStatus' --output text 2>&1
+aws codebuild batch-get-projects --profile <scanning_profile> \
+  --names ProwlerCodeBuild ProwlerReportingCodeBuild --query 'projects[].name' --output text
+```
+
+Anything but a "does not exist" error and an empty project list means SATv2 is already
+deployed here under some name — see the footprint sweep in `references/prerequisites.md`.
 
 ```bash
 aws cloudformation create-stack --profile <scanning_profile> \

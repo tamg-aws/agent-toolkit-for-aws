@@ -114,8 +114,9 @@ starts no scan.
 
 ## Parameter validation error on the member-role template
 
-**Cause.** The workshop text names the parameter `AuditAccountId`. The template's actual
-parameter is `ProwlerAccountID`, with `AllowedPattern: \d{12}`.
+**Cause.** The workshop text, as observed in 2026-09, names the parameter `AuditAccountId`. The
+template's actual parameter is `ProwlerAccountID`, with `AllowedPattern: \d{12}`. Confirm the
+workshop page still says so before telling a user their documentation is wrong.
 
 **Fix.** Use `ProwlerAccountID`, twelve digits, no spaces or hyphens.
 
@@ -205,14 +206,20 @@ will not find them. Read the stack instead:
 ```bash
 aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
   --query 'Stacks[0].StackStatus' --output text
-aws cloudformation describe-stack-events --profile <scanning_profile> --stack-name SATv2 \
-  --query 'StackEvents[?contains(ResourceStatus,`FAILED`)].[LogicalResourceId,ResourceStatusReason]' \
+aws cloudformation describe-events --profile <scanning_profile> --stack-name SATv2 \
+  --query 'OperationEvents[?EventType==`VALIDATION_ERROR`].[ValidationName,LogicalResourceId,ValidationStatusReason]' \
   --output text
 ```
 
-Stack events often report only a generic `Validation failed with 1 error(s)` with no
-resource detail. To surface the real reason without executing anything, create a change set
-and read its status:
+`describe-events` is the call that carries pre-deployment validation detail. The legacy
+`describe-stack-events` reports only a generic `Validation failed with 1 error(s)`, and the
+sibling `aws-cloudformation` skill's SOP steers away from it for the same reason. A role-name
+collision reads `NAME_CONFLICT_VALIDATION` against logical ID `ProwlerIntegrationCodeBuildRole`,
+exactly as under "The member accounts you cannot pre-check" in `references/prerequisites.md`;
+note the response key is `OperationEvents`, not `Events`. On a rolled-back plain stack this is
+documented behaviour, not something this skill's authors exercised live. If `OperationEvents`
+comes back empty, fall back to a diagnostic change set, which surfaces the same validation
+without executing anything:
 
 ```bash
 aws cloudformation create-change-set --profile <scanning_profile> \
@@ -258,9 +265,11 @@ Read the pin at runtime rather than asserting a version:
 
 ```bash
 grep -n 'prowler==' 2-sat2-codebuild-prowler.yaml
+python3 -c 'import json,urllib.request;print(json.load(urllib.request.urlopen("https://pypi.org/pypi/prowler/json"))["info"]["version"])'
 ```
 
-Compare it to the current release and **report the gap as a fact** — newer checks will be
+The second line reads the current release from PyPI (5.41.0 as of 2026-09), so the comparison
+is measured rather than recalled. Compare the two and **report the gap as a fact** — newer checks will be
 absent, so a clean scan does not mean a clean account under current Prowler guidance. Do not
 bump the pin; that breaks reporting. If newer checks are needed, the correct path is upstream
 in [`awslabs/aws-security-assessment-solution`](https://github.com/awslabs/aws-security-assessment-solution).

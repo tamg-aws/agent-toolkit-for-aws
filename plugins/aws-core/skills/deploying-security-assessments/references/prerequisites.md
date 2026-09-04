@@ -21,7 +21,7 @@ but it must be able to assume `ProwlerMemberRole` in every target account and to
 ## Management-account credentials are mandatory
 
 Delegated-administrator credentials alone are **not sufficient**. Management-account
-access is required at four points:
+access is required at every one of these points:
 
 1. Creating the service-managed StackSet for `ProwlerMemberRole`. Delegatable — if
    CloudFormation StackSets is delegated to another account, that account may create it
@@ -29,10 +29,15 @@ access is required at four points:
 2. Deploying `1-sat2-member-roles.yaml` as a **plain stack to the management account**.
    StackSets do not apply to the management account, so it does not otherwise receive the
    role. Not delegatable.
-3. Creating or editing the **Organizations delegation policy**, if the scanning account
+3. **Activating trusted access** for StackSets (`activate-organizations-access`) when
+   `describe-organizations-access` is not `ENABLED`. Organization-wide. Not delegatable.
+4. **Registering a StackSets delegated administrator**, if the scanning account is to run
+   StackSet operations itself. Not delegatable.
+5. Creating or editing the **Organizations delegation policy**, if the scanning account
    cannot list accounts. Organizations settings are management-account-only. Not
    delegatable.
-4. **Cleanup** — deleting the management-account stack.
+6. **Cleanup** — deleting the management-account stack, and reversing 3, 4 and 5 if they
+   were done solely for this.
 
 Confirm with the user that they can obtain management-account credentials before
 starting. If they cannot, stop and say so: the deployment cannot complete, and partial
@@ -131,10 +136,12 @@ aws cloudformation describe-organizations-access --profile <management_profile> 
   --query Status --output text
 ```
 
-**Treat anything other than `ENABLED` as not ready.** Observed values are `ENABLED` and
-`DISABLED`; the string `INACTIVE` does not appear. AWS has already renamed this vocabulary
-once — "Activate/Deactivate Organizations Access" replaced "Enable/Disable" — so compare
-against `ENABLED` rather than matching a particular negative value.
+**Treat anything other than `ENABLED` as not ready.** The API's values are `ENABLED`,
+`DISABLED` and `DISABLED_PERMANENTLY`; the string `INACTIVE` does not appear. AWS has already
+renamed this vocabulary once — "Activate/Deactivate Organizations Access" replaced
+"Enable/Disable" — so compare against `ENABLED` rather than matching a particular negative
+value. `DISABLED_PERMANENTLY` cannot be reversed by the call below; if you see it, stop and
+report it to the user rather than retrying.
 
 If it is `DISABLED`, activate trusted access **from the management account** — not from a
 delegated admin. This is an organization-wide write: obtain approval under rule 1 first, and
@@ -158,8 +165,12 @@ service principal absent:
 
 This matches the Organizations user guide, which states the trusted access can only be enabled
 through CloudFormation StackSets. Running the Organizations call first is harmless but
-redundant, and its apparent success is misleading: the principal shows up in
-`list-aws-service-access-for-organization` while StackSets is still unusable.
+redundant, and its apparent success is misleading in two ways. The principal shows up in
+`list-aws-service-access-for-organization` while StackSets is still unusable; and — observed
+from a clean state — `register-delegated-administrator` then succeeds too, so the scoped list
+shows the account `ACTIVE` while every `--call-as DELEGATED_ADMIN` call from it still fails
+with `ValidationError`. A registered StackSets delegated administrator in an organization
+where StackSets is still deactivated looks like progress and is not.
 
 Re-run the check and do not begin Step 1 until it returns `ENABLED`.
 
@@ -203,15 +214,8 @@ administrator for this service. Call the AWS API EnableAWSServiceAccess first.
 Do not let that message divert you to `organizations enable-aws-service-access`.
 `cloudformation activate-organizations-access` satisfies the constraint — observed: the same
 register call failed while the status was `DISABLED` and succeeded immediately after
-activating.
-
-The trap is that the Organizations call **also** satisfies it. Observed from a clean state:
-`enable-aws-service-access` alone leaves `describe-organizations-access` at `DISABLED`, yet
-`register-delegated-administrator` then succeeds and the scoped list shows the account
-`ACTIVE` — while every `--call-as DELEGATED_ADMIN` call from it still fails with
-`ValidationError`. Following the error message literally produces a registered StackSets
-delegated administrator in an organization where StackSets is still deactivated: it looks
-like progress and is not.
+activating. The Organizations call also satisfies it, which is the trap described under the
+activation block above: registration succeeds while StackSets stays unusable.
 
 Registering is itself an organization-level write — approval under rule 1 first.
 
@@ -253,9 +257,9 @@ If that succeeds, nothing further is needed — skip the policy below.
 
 **If it fails, check delegated-administrator status before writing any policy.** That call
 succeeds from the management account or from a member account registered as a delegated
-administrator, and registration for **any** supported service confers the Organizations
-read-only permissions (`ListAccounts`, `DescribeAccount`, `ListTagsForResource`) — the same
-three actions the policy below grants.
+administrator, and registration for **any** supported service confers the full Organizations
+read-only API set — which includes the three actions the policy below grants, and much more.
+Registration is the broader grant, not the lighter one.
 
 ```bash
 aws organizations list-delegated-administrators --profile <management_profile> \
@@ -336,7 +340,7 @@ report deltas rather than assuming greenfield:
 # ROLLBACK_COMPLETE, UPDATE_ROLLBACK_COMPLETE or DELETE_FAILED still owns its named
 # resources and will collide, but is invisible to that filter.
 aws cloudformation list-stacks --profile <profile> \
-  --query 'StackSummaries[?StackStatus!=`DELETE_COMPLETE` && (contains(StackName,`SATv2`) || contains(StackName,`rowler`))].[StackName,StackStatus]' \
+  --query 'StackSummaries[?StackStatus!=`DELETE_COMPLETE` && (contains(StackName,`SATv2`) || contains(StackName,`sat2`) || contains(StackName,`rowler`))].[StackName,StackStatus]' \
   --output text
 
 aws cloudformation list-stack-sets --profile <profile> --status ACTIVE \
@@ -344,6 +348,12 @@ aws cloudformation list-stack-sets --profile <profile> --status ACTIVE \
 
 # Does the member role already exist here?
 aws iam get-role --profile <profile> --role-name ProwlerMemberRole >/dev/null 2>&1 \
+  && echo "present" || echo "absent"
+
+# Scanning account only: the solution stack's fixed-name resources, whatever the stack was called
+aws codebuild batch-get-projects --profile <scanning_profile> \
+  --names ProwlerCodeBuild ProwlerReportingCodeBuild --query 'projects[].name' --output text
+aws iam get-role --profile <scanning_profile> --role-name ProwlerCodeBuildRole >/dev/null 2>&1 \
   && echo "present" || echo "absent"
 
 # Delegated administrators already registered
@@ -363,8 +373,16 @@ account misses an existing deployment in the other — a SATv2 solution stack li
 scanning account, not the management account, so a management-only sweep reports a false
 "clean install".
 
-If a `ProwlerMemberRole` or SATv2 stack already exists, report it and ask whether to
-reuse, update, or replace. Do not create a second copy.
+The name filter is case-sensitive and the upstream README deploys as `sat2`, so the filter
+includes that spelling; the fixed-name checks catch a deployment under any other name, because
+`ProwlerCodeBuild`, `ProwlerReportingCodeBuild` and `ProwlerCodeBuildRole` are hardcoded in
+the template and collide regardless of stack name.
+
+A stack named `SATv2-preflight` in `REVIEW_IN_PROGRESS` is a dry-run leftover from the
+validation step below, not a deployment — see that section for removing it.
+
+If a `ProwlerMemberRole`, a SATv2 stack, or any of those fixed-name resources already exists,
+report it and ask whether to reuse, update, or replace. Do not create a second copy.
 
 ### The member accounts you cannot pre-check
 
@@ -396,11 +414,12 @@ operator-assumable). Handle it this way:
    ```bash
    aws cloudformation list-stack-instances --profile <management_profile> \
      --stack-set-name <stack_set_name> \
-     --query 'Summaries[].{Account:Account,Status:Status,Reason:StatusReason}'
+     --query 'Summaries[].{Account:Account,Status:Status,Detailed:StackInstanceStatus.DetailedStatus,Reason:StatusReason}'
    ```
 
    **The operation detail does not name the collision.** A pre-existing `ProwlerMemberRole`
-   produces instance status `OUTDATED`/`FAILED` with the generic reason
+   produces instance `Status` `OUTDATED` with `StackInstanceStatus.DetailedStatus` `FAILED` —
+   two fields, which is why the query above projects both — and the generic reason
    `ResourceStatusReason:Validation failed with 1 error(s). Call DescribeEvents to retrieve
    the full list of issues…` — no `AlreadyExists`, no role name. Observed twice. From the
    management account it is indistinguishable from any other pre-deployment validation
@@ -431,8 +450,8 @@ operator-assumable). Handle it this way:
    (observed `SUCCEEDED`/`CURRENT`), or keep the existing role and exclude that account with
    `AccountFilterType=DIFFERENCE`.
 
-Keep `FailureToleranceCount=0`. Raising it to push past a collision hides which accounts
-were skipped and leaves the org half-deployed.
+On `FailureToleranceCount` and concurrency, see Step 1 in `references/satv2-deployment.md` —
+the rationale lives there once, not here.
 
 ## Validate both templates before deploying
 
@@ -467,9 +486,14 @@ Three things to know about these templates specifically while you are there:
   ```
 
   A non-zero count means the registry knows the property and cfn-lint is behind; the change-set
-  path below is the authoritative check because it validates against the registry. Current
-  instance: `HostKernel` on `AWS::CodeBuild::Project`, added upstream in 2026-08/09, which
-  cfn-lint 1.46 rejects twice while the change set accepts it.
+  path below is the authoritative check because it validates against the registry. Record
+  `cfn-lint --version` alongside any such finding, because the specific false positive rotates
+  with the release: cfn-lint 1.46 rejected `HostKernel` on `AWS::CodeBuild::Project` twice
+  (upstream added it in 2026-08/09) while the change set accepted it; cfn-lint 1.56 accepts
+  `HostKernel` but instead warns `W1030` that `CodeBuildTimeout`'s maximum of 2160 exceeds a
+  limit of 480 — also schema lag, since CodeBuild's ceiling has been 2160 minutes since
+  2024-06. The gate is per property: dismiss an `E3002` only after `describe-type` confirms
+  *that* property name, never because it resembles this example.
 
 Run the dry run against a **throwaway stack name** — `SATv2-preflight`, not `SATv2` — so the
 shell it leaves behind can never block the real create, even if cleanup is skipped or fails.
