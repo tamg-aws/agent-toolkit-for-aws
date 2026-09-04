@@ -78,9 +78,11 @@ Two templates at the repository root:
 2. **Echo identity and confirm before acting.** Before the first deploy step, run
    `aws sts get-caller-identity` and `aws organizations describe-organization`, then echo
    the account ID, caller ARN, resolved region, and whether that account is the
-   management account back to the user and ask them to confirm or correct. Never assume
-   the active profile is the intended account — this solution spans three account roles
-   and the wrong one fails late.
+   management account back to the user and ask them to confirm or correct. Decide
+   "management" from `describe-organization`'s `MasterAccountId`, never from an account or
+   profile name — one management account observed was *named*
+   `Organization_Delegated_Administrator`. Never assume the active profile is the intended
+   account — this solution spans three account roles and the wrong one fails late.
 
 3. **Creating the stack runs a scan; updating it does not.** On **create**,
    `2-sat2-codebuild-prowler.yaml`'s `Custom::CodeBuildStartBuild` resource launches the
@@ -144,7 +146,8 @@ stops the deployment partway through:
   cleanup — and is not optional. `references/prerequisites.md` enumerates them.
 - Whether `aws cloudformation describe-organizations-access` returns `ENABLED`. If not,
   activating trusted access is a management-account, organization-wide write that needs
-  approval under rule 1 before Step 1 can run.
+  approval under rule 1 before Step 1 can run. From a member account that is not a StackSets
+  delegated administrator the call itself fails; see the fallback in `references/prerequisites.md`.
 - Which account will be the **scanning account** (the workshop uses the audit account).
 - Whether the scanning account can call `aws organizations list-accounts`. If not, check
   whether it is already a delegated administrator for any service; only if it is not does it

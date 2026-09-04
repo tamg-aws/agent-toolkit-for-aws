@@ -18,6 +18,11 @@ every StackSet command. Omitting it fails in two different ways: `list-stack-set
 write calls fail with `ValidationError: You must be the management account or delegated admin
 account of an organization before operating a SERVICE_MANAGED stack set`.
 
+When both routes are open — the scanning account is a StackSets delegated administrator *and*
+management credentials are available — prefer the management account with no `--call-as`: the
+steps below are written for `<management_profile>`, and it sidesteps every `--call-as` failure
+mode.
+
 ## Templates
 
 Fetch from the repository root rather than embedding copies, so parameters and the Prowler
@@ -107,14 +112,25 @@ own count, so read that rather than trusting any number written here:
 grep -h 'There are .* available checks' checks/*_checks.txt
 ```
 
-`Full` is bounded only by `CodeBuildTimeout`. Before selecting it, multiply expected
-per-account duration by account count divided by `ConcurrentAccountScans` and compare
-against the timeout.
+`Full` is bounded only by `CodeBuildTimeout`. Before selecting it, multiply the slowest
+account's expected duration by the number of waves — account count divided by the
+**effective** concurrency — and compare against the timeout. Effective concurrency is not
+`ConcurrentAccountScans`: the upstream buildspec throttles on `jobs | wc -l`, each backgrounded
+brace-group prints three lines, so the real parallelism is `ConcurrentAccountScans ÷ 3`
+(`Three` → 1 account at a time, `Six` → 2, `Twelve` → 4, `FortyEight` → 16), and the bare
+`wait` then blocks until the whole wave has finished, so one slow account holds every later
+wave. Verified twice: a local reproduction of the throttle, and a live `Six` run of four
+accounts that started two Prowler processes, then the other two only after both had completed.
+The fix belongs upstream (`jobs -p | wc -l`); do not patch the template locally — fetch it from
+upstream as the templates section says. Use `Six` or higher for anything beyond a pilot;
+`Three` is serial on the smallest compute type.
 
-One measured anchor for that formula: a `Full` scan on the pinned Prowler took roughly
-**35 minutes per account** — but that was on very small accounts (937 to 15,466 findings
-each), n=1. Treat it as a floor rather than an estimate. Accounts with more resources take
-proportionally longer, so scale from your own account sizes instead of reusing the number.
+Measured anchors for that formula — `Full` on the pinned Prowler, four small accounts (937 to
+15,467 findings each), two runs: per-account times of **3½, 6½, 12 and 36 minutes**, the
+largest account being the slow one, and a wall clock of about **52 minutes** with `Six`, which
+was two waves of two, not one. Treat 36 minutes as what the largest of these accounts costs,
+not as a floor for yours; accounts with more resources take proportionally longer, so scale
+from your own account sizes.
 For the lighter tiers on even smaller accounts (under 100 `Basic` findings each, n=2):
 `Basic` ran 13 checks in about 1¼ minutes per account and `Intermediate` ran 171 in about
 2½, with a 7-minute wall clock for two accounts including the CodeBuild install phase.
@@ -172,7 +188,11 @@ organization use
 `--operation-preferences ConcurrencyMode=SOFT_FAILURE_TOLERANCE,FailureToleranceCount=0,MaxConcurrentPercentage=25`
 instead: the soft mode keeps stop-at-first-failure while deploying in parallel. State the
 expected rollout time to the user either way. The strict settings were exercised live by this
-skill's authors; the soft-mode alternative is taken from the CLI documentation and was not.
+skill's authors. The soft-mode syntax was also exercised: the CLI accepts it and sends
+`OperationPreferences.ConcurrencyMode=SOFT_FAILURE_TOLERANCE` on the wire, and the operation
+succeeded — but `describe-stack-set-operation` does not echo the mode back, and with a single
+target account the parallel behaviour cannot be told apart from strict mode, so the speed-up
+itself is documented, not observed.
 
 `--auto-deployment` and `--call-as DELEGATED_ADMIN` are valid only with
 `--permission-model SERVICE_MANAGED`. Auto-deployment is what covers accounts added later.
@@ -250,7 +270,9 @@ failure surfaces mid-build, after the stack exists.
 
 **Creating this stack starts the scan.** Confirm the user is approving the scan and its cost,
 not only the infrastructure. State the tier, the account count and the concurrency first, with
-the drivers under "Cost drivers to state before approval" in `references/prerequisites.md`.
+the drivers under "Cost drivers to state before approval" in `references/prerequisites.md`. The
+example uses `ConcurrentAccountScans=Six` because `Three` scans one account at a time — see the
+concurrency note under "Scan tiers".
 
 Read first — the solution stack, or its fixed-name resources under some other stack name:
 
@@ -273,7 +295,7 @@ aws cloudformation create-stack --profile <scanning_profile> \
   --parameters \
     ParameterKey=ProwlerScanType,ParameterValue=Intermediate \
     ParameterKey=MultiAccountScan,ParameterValue=true \
-    ParameterKey=ConcurrentAccountScans,ParameterValue=Three \
+    ParameterKey=ConcurrentAccountScans,ParameterValue=Six \
     ParameterKey=CodeBuildTimeout,ParameterValue=300 \
     ParameterKey=Reporting,ParameterValue=true \
   --capabilities CAPABILITY_NAMED_IAM
@@ -294,8 +316,8 @@ aws codebuild batch-get-builds --profile <scanning_profile> --ids "$BUILD_ID" \
 
 Runtime is tier-dependent, so read this against the tier you chose. Expect minutes for a few
 accounts at `Basic` or `Intermediate`. At `Full`, four small accounts measured 52 minutes wall
-clock with `ConcurrentAccountScans=Six` (a single wave), and an organization-wide `Full` scan
-runs to hours.
+clock with `ConcurrentAccountScans=Six` — two waves of two, because of the concurrency bug
+described under "Scan tiers" — and an organization-wide `Full` scan runs to hours.
 
 Confirm which accounts were actually reached — see `references/troubleshooting.md`. The
 build status alone does not tell you: per-account failures are recorded inside a

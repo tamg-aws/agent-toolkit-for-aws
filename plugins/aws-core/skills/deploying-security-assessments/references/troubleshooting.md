@@ -16,7 +16,9 @@ Establish coverage explicitly, scoped to one build:
 BUILD_ID=$(aws codebuild list-builds-for-project --profile <scanning_profile> \
   --project-name ProwlerCodeBuild --sort-order DESCENDING --query 'ids[0]' --output text)
 
-# accounts actually assumed in THIS build
+# accounts actually assumed in THIS build. "Assumed Role ARN" is Prowler's own banner line;
+# the buildspec's per-account line is "Running Prowler as prowler ... --role arn:...:<account>"
+# and can be filtered the same way — either signal works, know which one you are reading.
 aws logs filter-log-events --profile <scanning_profile> \
   --log-group-name /aws/codebuild/ProwlerCodeBuild --log-stream-names "${BUILD_ID#*:}" \
   --filter-pattern '"Assumed Role ARN"' --query 'events[].message' --output text \

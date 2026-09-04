@@ -174,6 +174,14 @@ where StackSets is still deactivated looks like progress and is not.
 
 Re-run the check and do not begin Step 1 until it returns `ENABLED`.
 
+From a member account that is not a StackSets delegated administrator,
+`describe-organizations-access` itself fails with `ValidationError: You must be the management
+account or delegated admin account…` (observed). The observable proxy from such an account is
+whether `member.org.stacksets.cloudformation.amazonaws.com` appears in
+`list-aws-service-access-for-organization`: present means activated, absent means almost
+certainly not. The authoritative read still needs management or StackSets-delegated
+credentials.
+
 If you do inspect the Organizations-side service list, the principal is
 `member.org.stacksets.cloudformation.amazonaws.com`. Do **not** check for
 `stacksets.cloudformation.amazonaws.com` — that name does not appear in working
@@ -258,7 +266,8 @@ aws organizations list-accounts --profile <scanning_profile> \
   --query 'Accounts[?Status==`ACTIVE`].Id' --output text
 ```
 
-If that succeeds, nothing further is needed — skip the policy below.
+If that succeeds, nothing further is needed **for account discovery** — skip the policy below.
+Steps 1 and 2 still require management-account credentials regardless.
 
 **If it fails, check delegated-administrator status before writing any policy.** That call
 succeeds from the management account or from a member account registered as a delegated
@@ -473,6 +482,14 @@ it:
 
 - **Syntax and schema (cfn-lint)** — the `validate-cloudformation-template` SOP.
 - **Security and compliance (cfn-guard)** — the `check-cloudformation-template-compliance` SOP.
+  cfn-guard ships no rules and that SOP expects to ask the user which ruleset to use; for an
+  unattended run, `wa-Security-Pillar.guard` from release 1.0.2 of
+  `aws-cloudformation/aws-guard-rules-registry` is the default two independent cold runs
+  converged on. Its results against the unmodified upstream templates are advisory, not a gate:
+  one inline-policy finding on the member role and seven on the solution template, most
+  acknowledged by the template's own `cfn_nag` suppressions, and one
+  (`S3_BUCKET_SSL_REQUESTS_ONLY`) a rule false positive — the TLS-only Deny lives in the sibling
+  bucket-policy resource.
 - **Pre-deployment validation** — the `cloudformation-pre-deploy-validation` SOP. Use its
   change-set path: `create-change-set --change-set-type CREATE` against a stack name that does
   not yet exist runs every validation check and provisions nothing.
@@ -483,7 +500,10 @@ Three things to know about these templates specifically while you are there:
   templates. Each creates a named IAM role; neither needs `CAPABILITY_AUTO_EXPAND`.
 - The solution template's change set lists a **`Custom::CodeBuildStartBuild`** resource. That
   is the resource that makes creating the stack start a scan, so showing it in the plan is the
-  cheapest way to demonstrate to the user that the cost is real *before* they approve.
+  cheapest way to demonstrate to the user that the cost is real *before* they approve. Read the
+  validation result with `describe-events` filtered to `EventType == VALIDATION_ERROR`; a clean
+  change set still returns `STACK_EVENT` entries, so an empty *filtered* list — not an empty
+  response — is the pass condition.
 - **cfn-lint can fail the unmodified upstream template on a false positive.** Its bundled
   resource schemas lag the live CloudFormation registry, so a property upstream added recently
   surfaces as `E3002 Additional properties are not allowed ('<Property>' was unexpected)` and a
@@ -522,13 +542,16 @@ Give the user these drivers before they approve the scan, not afterward:
 
 - **CodeBuild minutes** — the dominant cost. Scales with scan tier, account count, and
   `ConcurrentAccountScans` (which also selects a larger compute type: `Three` uses
-  `BUILD_GENERAL1_SMALL`, `Six` uses `BUILD_GENERAL1_MEDIUM`).
+  `BUILD_GENERAL1_SMALL`, `Six` uses `BUILD_GENERAL1_MEDIUM`). The effective parallelism is a
+  third of `ConcurrentAccountScans` because of an upstream buildspec bug — see "Scan tiers" in
+  `references/satv2-deployment.md` — so `Three` runs accounts serially.
 - **S3 storage** — by default findings are written as CSV, OCSF JSON and HTML; ASFF only
   when `ProwlerOptions` selects it, and plain JSON never on Prowler 5 (see
   `references/reviewing-results.md`). Volume is dominated by formats the Glue table never
-  reads: one `Full` run across four small accounts (24,588 findings) plus three lighter runs
-  left a 3.0 GB bucket with 210 object versions, of which `ocsf-json/` and `compliance/`
-  were 1.4 GB each and `csv/` — the only prefix Athena queries — was 49 MB. Size scales with
+  reads: a single `Full` run across four small accounts (24,589 findings) produced a 3.06 GB
+  bucket of 159 objects, of which `ocsf-json/` and `compliance/` were 1.4 GB each and `csv/` —
+  the only prefix Athena queries — was 49 MB (observed twice; three lighter runs alongside the
+  first added almost nothing). Size scales with
   finding count, and `compliance/` appears only at `Full`. The bucket is versioned and has
   `DeletionPolicy: Retain`, so it survives stack deletion and keeps billing until deleted
   deliberately.
