@@ -121,7 +121,8 @@ For the lighter tiers on even smaller accounts (under 100 `Basic` findings each,
 
 If an existing stack was deployed against an older template, it may hold a
 `ProwlerScanType` value the current template no longer offers. Pass `ProwlerScanType`
-explicitly on any update rather than reusing the previous value.
+explicitly on any update rather than reusing the previous value — see "Updating the stack"
+below for the full command.
 
 ## Deployment sequence
 
@@ -248,7 +249,8 @@ failure surfaces mid-build, after the stack exists.
 ### Step 4 — the solution stack (scanning account)
 
 **Creating this stack starts the scan.** Confirm the user is approving the scan and its cost,
-not only the infrastructure. State the tier, the account count and the concurrency first.
+not only the infrastructure. State the tier, the account count and the concurrency first, with
+the drivers under "Cost drivers to state before approval" in `references/prerequisites.md`.
 
 Read first — the solution stack, or its fixed-name resources under some other stack name:
 
@@ -318,13 +320,50 @@ uses `organizations list-accounts` filtered to `Status==ACTIVE`.
 
 **Clear it once the pilot passes.** An override left in place silently caps every later scan at
 the accounts it names, and nothing in the build status or the output says so — see
-`references/troubleshooting.md`. Clearing it takes a stack update **and** a fresh
-`start-build`, because the update alone starts no scan.
+`references/troubleshooting.md`. Clearing it takes the update under "Updating the stack" below
+— passing every other parameter as `UsePreviousValue=true`, or the update resets them — **and**
+a fresh `start-build`, because the update alone starts no scan (both rule 1).
+
+## Updating the stack
+
+Every change to a deployed `SATv2` stack — clearing a pilot override, changing tier or
+concurrency, adding `-M … json-asff` to `ProwlerOptions` — goes through one command, and it has
+one trap: **a parameter you omit from `--parameters` reverts to the template default, not to
+its current value.** Naming only the parameter you mean to change therefore resets
+`ProwlerScanType` to `Intermediate`, `Reporting` to `'true'` and `MultiAccountScan` to
+`'false'` — and that last one both narrows the next scan to the scanning account (trap 1) and
+makes the template try to create a local `ProwlerMemberRole`, which collides with the
+StackSet's copy and rolls the update back (see `references/troubleshooting.md`). Pass every
+parameter, either with its intended value or with `UsePreviousValue=true`. This is a gated
+write under rule 1.
+
+```bash
+aws cloudformation update-stack --profile <scanning_profile> --stack-name SATv2 \
+  --use-previous-template --capabilities CAPABILITY_NAMED_IAM \
+  --parameters \
+    ParameterKey=ProwlerScanType,UsePreviousValue=true \
+    ParameterKey=MultiAccountScan,UsePreviousValue=true \
+    ParameterKey=MultiAccountListOverride,ParameterValue="" \
+    ParameterKey=ConcurrentAccountScans,UsePreviousValue=true \
+    ParameterKey=CodeBuildTimeout,UsePreviousValue=true \
+    ParameterKey=Reporting,UsePreviousValue=true \
+    ParameterKey=ProwlerRole,UsePreviousValue=true \
+    ParameterKey=ProwlerOptions,UsePreviousValue=true \
+    ParameterKey=EmailAddress,UsePreviousValue=true
+aws cloudformation wait stack-update-complete --profile <scanning_profile> --stack-name SATv2
+aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
+  --query 'Stacks[0].Parameters[].[ParameterKey,ParameterValue]' --output text
+```
+
+The example clears `MultiAccountListOverride`; substitute whichever parameter you are changing.
+`--use-previous-template` keeps the Prowler pin and the Glue schema exactly as deployed. Read the
+parameters back afterwards and confirm nothing else moved. **The update starts no scan** (rule
+3): follow it with `codebuild start-build`, which is its own approval point.
 
 ## Re-running after accounts are added
 
-Updating the stack does **not** start a scan — see `SKILL.md` global rule 3. After adding
-accounts:
+Updating the stack does **not** start a scan — see "Updating the stack" above and `SKILL.md`
+global rule 3. After adding accounts:
 
 1. Confirm the StackSet reached them with `list-stack-instances`. Service-managed StackSets
    with auto-deployment enabled cover new organization members automatically.
@@ -366,9 +405,12 @@ exercised live by this skill's authors.
 ```bash
 aws organizations describe-resource-policy --profile <management_profile> \
   --query 'ResourcePolicy.Content' --output text > current-policy.json
-# edit current-policy.json: delete the statement whose Sid is SATv2ListAccounts, nothing else
+python3 -c 'import json;d=json.load(open("current-policy.json"));d["Statement"]=[s for s in d["Statement"] if s.get("Sid")!="SATv2ListAccounts"];json.dump(d,open("trimmed-policy.json","w"));print(len(d["Statement"]),"statement(s) remain")'
+# one or more statements remain — write the trimmed document back:
 aws organizations put-resource-policy --profile <management_profile> \
-  --content file://current-policy.json
+  --content file://trimmed-policy.json
+# zero remain — the policy was ours alone:
+aws organizations delete-resource-policy --profile <management_profile>
 aws organizations describe-resource-policy --profile <management_profile> \
   --query 'ResourcePolicy.Content' --output text
 ```

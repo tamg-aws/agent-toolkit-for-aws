@@ -191,7 +191,8 @@ two yields `InvalidOperationException: Account used is not a delegated administr
 omitting `--call-as` — is not silent everywhere either: `list-stack-sets` and
 `list-stack-instances` return empty, but `describe-organizations-access` and the write calls
 fail with `ValidationError: You must be the management account or delegated admin account of
-an organization before operating a SERVICE_MANAGED stack set` (observed).
+an organization before operating a SERVICE_MANAGED stack set` (describe observed; the write
+calls return the same error class).
 
 Check with the service principal **scoped**, from the management account:
 
@@ -323,9 +324,10 @@ Two cautions:
 
 - **GovCloud has no Organizations resource policies.** The upstream README says so and routes
   GovCloud to its step 8a — registering a delegated administrator (see "Two different kinds of
-  delegated administrator" above; approval-gated). `MultiAccountListOverride` is this skill's
-  own fallback, not the README's. The GovCloud claim is the README's, not observed here —
-  verify current availability before advising.
+  delegated administrator" above; approval-gated). The README also offers
+  `MultiAccountListOverride` as the fallback when ListAccounts access cannot be delegated; this
+  skill orders it last. The GovCloud claim is the README's, not observed here — verify current
+  availability before advising.
 - The principal ARN is hardcoded to the `aws` partition. In China, substitute `aws-cn`.
 
 ## Region planning
@@ -455,7 +457,7 @@ operator-assumable). Handle it this way:
    To converge afterwards: `delete-stack-instances --no-retain-stacks` clears the `OUTDATED`
    instance (a gated write). Then either keep the existing role and exclude that account with
    `AccountFilterType=DIFFERENCE`, or — if the account owner removes the pre-existing role —
-   rerun `create-stack-instances` (observed `SUCCEEDED`/`CURRENT`). This skill does not delete
+   rerun `create-stack-instances` (rule 1; observed `SUCCEEDED`/`CURRENT`). This skill does not delete
    a role it did not create: another team or scanner may depend on it, so the owner decides,
    after checking `get-role --query Role.RoleLastUsed` for recent use.
 
@@ -508,10 +510,11 @@ Run the dry run against a **throwaway stack name** — `SATv2-preflight`, not `S
 shell it leaves behind can never block the real create, even if cleanup is skipped or fails.
 "Provisions nothing" is true of resources, not of the stack record: a `CREATE`-type change set
 leaves a `REVIEW_IN_PROGRESS` stack with zero resources, and the footprint sweep above lists it
-as an existing SATv2 stack on every later run. Creating the change set is itself a gated write
-under rule 1, as is deleting it, and removing the stack is a `delete-stack` — name all three in
-any pre-authorization — so, with approval, delete the change set and then the stack, as the
-SOP's cleanup guidance says.
+as an existing SATv2 stack on every later run. Creating the change set, deleting it, and
+removing the stack are all writes under rule 1 — name all three in any pre-authorization — but
+since none of them touches a resource, present them together and take one confirmation per
+template rather than three; then delete the change set and the stack, as the SOP's cleanup
+guidance says.
 
 ## Cost drivers to state before approval
 

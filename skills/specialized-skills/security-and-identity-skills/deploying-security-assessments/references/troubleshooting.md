@@ -80,7 +80,9 @@ succeeds only from the management account or from a **registered delegated admin
 **Cause.** `MultiAccountScan` defaults to `'false'`. The buildspec logs
 `Running a single account scan.` and scans only the scanning account.
 
-**Fix.** Update the stack with `MultiAccountScan='true'`. If you also want to restrict which
+**Fix.** Update the stack with `MultiAccountScan='true'` using the block under "Updating the
+stack" in `references/satv2-deployment.md` — pass every other parameter as
+`UsePreviousValue=true` or they reset to their defaults (rule 1). If you also want to restrict which
 accounts are scanned, set `MultiAccountListOverride` **in addition** — on its own it is
 inert, because the buildspec reads it only inside the `MultiAccountScan='true'` branch.
 
@@ -109,8 +111,9 @@ aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SAT
 ```
 
 Empty output means discovery enumerates the organization. A list of account IDs means the scan
-is capped at exactly those. Clear it with a stack update, then start a build — the update alone
-starts no scan.
+is capped at exactly those. Clear it with the update block under "Updating the stack" in
+`references/satv2-deployment.md` — naming only the override would reset `MultiAccountScan` to
+`'false'` — then start a build (both rule 1); the update alone starts no scan.
 
 ## Parameter validation error on the member-role template
 
@@ -251,11 +254,11 @@ Glue table to match a newer Prowler — the reporting path depends on the declar
 
 ## Athena query fails with `AccessDenied`
 
-First establish which regime the account is in with `lakeformation get-data-lake-settings`, as
-described under "Lake Formation may govern this table" in `references/reviewing-results.md`.
-In a stock account (`IAM_ALLOWED_PRINCIPALS` defaults present) the denial is ordinary IAM on
-Glue, Athena or the bucket. Only in an account that has adopted Lake Formation — Security Lake
-puts it there — is it a Lake Formation grant that no IAM policy explains.
+First establish which regime the table is in with the two reads under "Lake Formation may
+govern this table" in `references/reviewing-results.md` — the grants on the `prowler` table
+decide. If `IAM_ALLOWED_PRINCIPALS` holds `ALL` on the table, the denial is ordinary IAM on
+Glue, Athena or the bucket. Only when no such grant exists is it a Lake Formation grant that no
+IAM policy explains.
 
 ## Prowler version staleness
 
@@ -273,7 +276,15 @@ python3 -c 'import json,urllib.request;print(json.load(urllib.request.urlopen("h
 The second line reads the current release from PyPI (5.41.0 as of 2026-09), so the comparison
 is measured rather than recalled. Compare the two and **report the gap as a fact** — newer checks will be
 absent, so a clean scan does not mean a clean account under current Prowler guidance. Do not
-bump the pin; that breaks reporting. If newer checks are needed, the correct path is upstream
+bump the pin. It does not break reporting — it silently corrupts it. Observed with 5.41.0 in a
+throwaway stack: install, scan, upload and the reporting chain all succeeded and Athena returned
+without error, but every 5.41 record carries embedded newlines in `risk` and `remediation_*`
+fields that the table's `OpenCSVSerde` cannot parse, so 65 findings became 1,839 lines — 1,773
+phantom rows with null `status` and `prowler_version`, every column from `risk` onward null or
+misaligned, `count(*)` inflated 28×, and `qProwlerOrgSummary` still looking right because
+`check_id` and `status` precede the first multi-line field. The three columns 5.41 appends are
+harmless; the newlines are not. Detection: `count(*)` far exceeding the CSV record count, or rows
+with a null `prowler_version`. If newer checks are needed, the correct path is upstream
 in [`awslabs/aws-security-assessment-solution`](https://github.com/awslabs/aws-security-assessment-solution).
 
 Note the dashboard follows a different policy: `ProwlerReportingCodeBuild` clones the

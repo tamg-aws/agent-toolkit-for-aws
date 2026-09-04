@@ -237,7 +237,9 @@ ProwlerOptions = aws --ignore-exit-code-3 -M csv json-asff json-ocsf html
 Observed: after that update and a fresh build, `asff-json/` held one `.asff.json` per account
 with no upload errors, and `csv/`, `ocsf-json/` and `html/` were still produced. There is no
 plain `json` value, which is why `json/` stays empty. It is a scan parameter, so it requires a
-stack update *and* a fresh `start-build`; the update alone starts no scan.
+stack update — via the block under "Updating the stack" in `references/satv2-deployment.md`,
+passing every other parameter as `UsePreviousValue=true` — *and* a fresh `start-build` (both
+rule 1); the update alone starts no scan.
 
 Note also that `ProwlerMemberRole` already carries `securityhub:BatchImportFindings` in every
 assessed account, whether or not the user intends to use it.

@@ -55,11 +55,15 @@ Two templates at the repository root:
    the Organizations delegation policy (`put-resource-policy` to add or trim,
    `delete-resource-policy` to remove), and `lakeformation grant-permissions` — plus
    `codebuild start-build`, which starts a billable scan, and
-   `create-change-set` / `delete-change-set`, which create and remove a stack record even
-   though they provision no resources. That list is meant to be complete enough for a
-   pre-authorization to name; if a command changes state and is not on it, it still needs
-   approval. Display the exact command and wait. Deleting the throwaway dry-run stack from
-   the validation step is a `delete-stack` and counts.
+   `create-change-set` / `delete-change-set`, which provision no resources but — for a
+   `CREATE`-type change set — create and remove a stack record. That list is meant to be
+   complete enough for a pre-authorization to name; if a command changes state and is not on
+   it, it still needs approval. Display the exact command and wait. Deleting the throwaway
+   dry-run stack from the validation step is a `delete-stack` and counts; the validation
+   section may present that stack's three dry-run commands together for a single
+   confirmation, since none of them touches a resource. Deleting or moving objects in the
+   findings bucket — the only instructed write that destroys the user's data — is never
+   covered by a pre-authorization: each instance needs its own approval.
 
    Approval may be given in advance, but only narrowly. It counts as pre-authorization
    when it names the specific operations it covers — including any of the
@@ -108,8 +112,11 @@ Two templates at the repository root:
 
 6. **Report the Prowler version honestly, and never bump it.** The template pins
    `prowler==5.11` deliberately. Read the pin from the template at runtime, compare it to
-   the current release, and report the gap as a fact. Changing the pin breaks the Glue
-   table schema. See `references/troubleshooting.md`.
+   the current release, and report the gap as a fact. Do not change the pin: a newer
+   Prowler does not break the Glue table, it silently corrupts it — observed with 5.41.0,
+   the build and reporting chain succeed and Athena returns without error, but multi-line
+   fields the table's `OpenCSVSerde` cannot parse turned 65 findings into 1,838 rows, most
+   with null status. See `references/troubleshooting.md`.
 
 7. **Never widen the member role.** `ProwlerMemberRole` carries `SecurityAudit` +
    `ViewOnlyAccess` plus an inline `ProwlerAdditions` policy. That inline policy is
@@ -120,7 +127,8 @@ Two templates at the repository root:
    pass.
 
 8. **State cost before scanning, not after.** Scan cost scales with tier, account count,
-   and concurrency. Give the driver before the user approves. The findings bucket is
+   and concurrency. Give the drivers before the user approves; they are enumerated under
+   "Cost drivers to state before approval" in `references/prerequisites.md`. The findings bucket is
    `DeletionPolicy: Retain` and survives stack deletion.
 
 ## Before you start
@@ -190,7 +198,9 @@ upstream README will hit. Raise them before the user encounters them, not after.
    pilot against two or three accounts by setting the override. Left in place, every later
    scan is silently capped at those accounts while `MultiAccountScan='true'` makes it look
    organization-wide and the build reports `SUCCEEDED`. Read the override before trusting
-   any coverage claim; clear it with an update and a fresh `start-build`.
+   any coverage claim; clear it with the update block under "Updating the stack" in
+   `references/satv2-deployment.md` and a fresh `start-build` — an update that names only
+   the override resets every other parameter to its template default.
 
 ## Not covered
 
