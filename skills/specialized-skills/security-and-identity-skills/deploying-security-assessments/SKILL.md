@@ -45,18 +45,27 @@ Two templates at the repository root:
 
 ## Global rules
 
-1. **Explicit approval before every stack operation.** You MUST obtain explicit user
-   approval before running `create-stack`, `update-stack`, `delete-stack`,
-   `create-stack-set`, or `create-stack-instances`, because each creates, modifies, or
-   deletes live infrastructure. Display the exact command and wait.
+1. **Explicit approval before every write to AWS.** You MUST obtain explicit user
+   approval before any command that creates, modifies, or deletes anything — the stack
+   operations (`create-stack`, `update-stack`, `delete-stack`, `create-stack-set`,
+   `create-stack-instances`, `delete-stack-instances`, `delete-stack-set`) **and** the
+   organization-wide and account-wide settings this skill also instructs:
+   `cloudformation activate-organizations-access` / `deactivate-organizations-access`,
+   `organizations register-delegated-administrator` / `deregister-delegated-administrator`,
+   the Organizations delegation policy (`put-resource-policy`), and
+   `lakeformation grant-permissions`. That list is illustrative, not exhaustive: if a
+   command changes state, it needs approval. Display the exact command and wait. Deleting
+   the throwaway dry-run stack from the validation step is a `delete-stack` and counts.
 
    Approval may be given in advance, but only narrowly. It counts as pre-authorization
-   when it names the specific operations it covers and, for creating the solution stack,
-   acknowledges that the create starts a scan and incurs its cost. A blanket "go ahead"
-   does not qualify. Pre-authorization changes nothing else: still run the identity check
-   in rule 2, still read before each write and verify after it (rules 4 and 5), and
-   record every command as it runs so the user can audit exactly what their approval
-   covered. With no user available to ask and no such pre-authorization, do not deploy.
+   when it names the specific operations it covers — including any of the
+   organization-wide settings above that the run may need — and, for creating the
+   solution stack, acknowledges that the create starts a scan and incurs its cost. A
+   blanket "go ahead" does not qualify. Pre-authorization changes nothing else: still run
+   the identity check in rule 2, still read before each write and verify after it (rules
+   4 and 5), and record every command as it runs so the user can audit exactly what their
+   approval covered. With no user available to ask and no such pre-authorization, do not
+   deploy.
 
 2. **Echo identity and confirm before acting.** Before the first deploy step, run
    `aws sts get-caller-identity` and `aws organizations describe-organization`, then echo

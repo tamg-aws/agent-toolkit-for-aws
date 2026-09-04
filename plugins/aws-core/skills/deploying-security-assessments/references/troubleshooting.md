@@ -240,10 +240,13 @@ table definition. This is what the version pin exists to prevent.
 **Fix.** Confirm the running Prowler version matches the template's pin. Do not edit the
 Glue table to match a newer Prowler — the reporting path depends on the declared schema.
 
-## Athena query fails with `AccessDenied` that no IAM policy explains
+## Athena query fails with `AccessDenied`
 
-The `prowler` table is governed by Lake Formation. See
-`references/reviewing-results.md`.
+First establish which regime the account is in with `lakeformation get-data-lake-settings`, as
+described under "Lake Formation may govern this table" in `references/reviewing-results.md`.
+In a stock account (`IAM_ALLOWED_PRINCIPALS` defaults present) the denial is ordinary IAM on
+Glue, Athena or the bucket. Only in an account that has adopted Lake Formation — Security Lake
+puts it there — is it a Lake Formation grant that no IAM policy explains.
 
 ## Prowler version staleness
 

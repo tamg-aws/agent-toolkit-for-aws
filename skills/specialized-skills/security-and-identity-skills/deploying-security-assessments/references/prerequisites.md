@@ -136,8 +136,10 @@ aws cloudformation describe-organizations-access --profile <management_profile> 
 once — "Activate/Deactivate Organizations Access" replaced "Enable/Disable" — so compare
 against `ENABLED` rather than matching a particular negative value.
 
-If it is not `ENABLED`, activate trusted access **from the management account** — not from a
-delegated admin:
+If it is `DISABLED`, activate trusted access **from the management account** — not from a
+delegated admin. This is an organization-wide write: obtain approval under rule 1 first, and
+say plainly that it enables service-managed StackSets for every account in the organization,
+not just this deployment.
 
 ```bash
 aws cloudformation activate-organizations-access --profile <management_profile>
@@ -211,6 +213,8 @@ The trap is that the Organizations call **also** satisfies it. Observed from a c
 delegated administrator in an organization where StackSets is still deactivated: it looks
 like progress and is not.
 
+Registering is itself an organization-level write — approval under rule 1 first.
+
 ```bash
 aws organizations register-delegated-administrator --profile <management_profile> \
   --service-principal member.org.stacksets.cloudformation.amazonaws.com \
@@ -264,34 +268,55 @@ Prescribing an org-level resource policy in that case is an avoidable organizati
 write.
 
 **Only if the scanning account is not a delegated administrator**, add an Organizations
-delegation policy. In the management account: **Organizations → Settings → Delegated
-administrator for AWS Organizations → Delegate** (or **Edit** an existing policy).
+delegation policy (the "Delegated administrator for AWS Organizations" resource policy). This
+is an organization-level write — approval under rule 1 first — and at the API it is
+**replace, not append**: `put-resource-policy` overwrites the whole document, so a naive write
+removes every other account's delegation. Read first:
+
+```bash
+aws organizations describe-resource-policy --profile <management_profile> \
+  --query 'ResourcePolicy.Content' --output text
+```
+
+`ResourcePolicyNotFoundException` means none exists and the statement below can be the whole
+policy. Otherwise take the returned document, **add** the statement below to its `Statement`
+array, and write the merged document back:
+
+```bash
+aws organizations put-resource-policy --profile <management_profile> \
+  --content file://merged-policy.json
+```
+
+The statement to add:
 
 ```json
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "Statement",
-      "Effect": "Allow",
-      "Principal": { "AWS": "arn:aws:iam::<scanning_account_id>:root" },
-      "Action": [
-        "organizations:ListAccounts",
-        "organizations:DescribeAccount",
-        "organizations:ListTagsForResource"
-      ],
-      "Resource": "*"
-    }
-  ]
+  "Sid": "SATv2ListAccounts",
+  "Effect": "Allow",
+  "Principal": { "AWS": "arn:aws:iam::<scanning_account_id>:root" },
+  "Action": [
+    "organizations:ListAccounts",
+    "organizations:DescribeAccount",
+    "organizations:ListTagsForResource"
+  ],
+  "Resource": "*"
 }
 ```
 
+Run `describe-resource-policy` again and confirm every pre-existing statement is still present
+before re-testing `list-accounts` from the scanning account. The console route
+(**Organizations → Settings → Delegated administrator for AWS Organizations → Edit**) shows
+the same document and is a reasonable alternative when merging by hand. This read-merge-write
+path is taken from the upstream README and has **not** been exercised in a live run by this
+skill's authors — every test organization so far already had a delegated administrator.
+
 Two cautions:
 
-- **If a delegation policy already exists, append to it — do not replace it.** Replacing
-  it can remove another account's access.
-- The ARN is hardcoded to the `aws` partition. In GovCloud or China, substitute
-  `aws-us-gov` or `aws-cn`.
+- **GovCloud has no Organizations resource policies.** Per the upstream README the only routes
+  there are an existing delegated-administrator registration or `MultiAccountListOverride`
+  (see `references/troubleshooting.md`). That claim is the README's, not observed here —
+  verify current availability before advising.
+- The principal ARN is hardcoded to the `aws` partition. In China, substitute `aws-cn`.
 
 ## Region planning
 
@@ -448,8 +473,11 @@ Three things to know about these templates specifically while you are there:
 
 Run the dry run against a **throwaway stack name** — `SATv2-preflight`, not `SATv2` — so the
 shell it leaves behind can never block the real create, even if cleanup is skipped or fails.
-Then follow that SOP's cleanup guidance: a `CREATE`-type change set leaves the stack in
-`REVIEW_IN_PROGRESS` with zero resources, so delete the change set and then the stack.
+"Provisions nothing" is true of resources, not of the stack record: a `CREATE`-type change set
+leaves a `REVIEW_IN_PROGRESS` stack with zero resources, and the footprint sweep above lists it
+as an existing SATv2 stack on every later run. Removing it is a `delete-stack` and falls under
+rule 1 — name it in any pre-authorization — so, with approval, delete the change set and then
+the stack, as the SOP's cleanup guidance says.
 
 ## Cost drivers to state before approval
 

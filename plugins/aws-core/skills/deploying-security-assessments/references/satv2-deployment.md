@@ -296,7 +296,9 @@ numbers from more than one run.
 
 ## Cleanup
 
-Delete in reverse order, and state plainly what is retained:
+Delete in reverse order, and state plainly what is retained. Every command here is a write
+under rule 1 — the four below and the two organization-level ones further down — so obtain
+approval for each before running it:
 
 ```bash
 aws cloudformation delete-stack --profile <scanning_profile> --stack-name SATv2
@@ -314,7 +316,8 @@ If a delegation policy was added solely for this, remove or trim it.
 If **trusted access** was activated solely for this, it can be reversed — but only
 deliberately. It is an organization-wide setting, unrelated service-managed StackSets depend
 on it, and it may well have predated SATv2. Leave it alone unless you activated it. When you
-do reverse it, deregister any StackSets delegated administrators first or the call fails:
+do reverse it — with approval, since both calls are organization-wide — deregister any
+StackSets delegated administrators first or the call fails:
 
 ```bash
 aws organizations deregister-delegated-administrator --profile <management_profile> \
