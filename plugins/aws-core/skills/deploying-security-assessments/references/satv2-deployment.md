@@ -288,6 +288,24 @@ aws cloudformation delete-stack-set --profile <management_profile> \
 
 If a delegation policy was added solely for this, remove or trim it.
 
+If **trusted access** was activated solely for this, it can be reversed — but only
+deliberately. It is an organization-wide setting, unrelated service-managed StackSets depend
+on it, and it may well have predated SATv2. Leave it alone unless you activated it. When you
+do reverse it, deregister any StackSets delegated administrators first or the call fails:
+
+```bash
+aws organizations deregister-delegated-administrator --profile <management_profile> \
+  --service-principal member.org.stacksets.cloudformation.amazonaws.com \
+  --account-id <scanning_account_id>
+aws cloudformation deactivate-organizations-access --profile <management_profile>
+```
+
+Out of order, the second call returns
+`InvalidOperationException: You have delegated administrator/s for this service. De-register
+them in order to disable service access.` Deactivation also removes
+`member.org.stacksets.cloudformation.amazonaws.com` from
+`list-aws-service-access-for-organization`, mirroring what activation added.
+
 **The findings bucket is `DeletionPolicy: Retain` and is versioned.** It survives stack
 deletion and continues to bill. Tell the user its name and that deleting it is a separate,
 deliberate action. Do not delete it without explicit instruction.

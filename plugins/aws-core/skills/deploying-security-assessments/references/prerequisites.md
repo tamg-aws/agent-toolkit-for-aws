@@ -174,7 +174,20 @@ for any service, so an account delegated only for something else — Security La
 appears `ACTIVE` there while every `--call-as DELEGATED_ADMIN` call still fails.
 
 If the scanning account is absent from the scoped list and you want it to drive StackSet
-operations, register it from the management account:
+operations, register it from the management account — but **activate trusted access first**,
+per the block above. Registering before `describe-organizations-access` reports `ENABLED`
+fails with:
+
+```text
+ConstraintViolationException: You must enable service access before you delegate an
+administrator for this service. Call the AWS API EnableAWSServiceAccess first.
+```
+
+Do not let that message divert you to `organizations enable-aws-service-access`.
+`cloudformation activate-organizations-access` satisfies the constraint — observed: the same
+register call failed while the status was `DISABLED` and succeeded immediately after
+activating. The Organizations call would leave StackSets unusable regardless, for the reason
+given above.
 
 ```bash
 aws organizations register-delegated-administrator --profile <management_profile> \
