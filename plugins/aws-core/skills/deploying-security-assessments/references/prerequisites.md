@@ -109,26 +109,73 @@ confirm before proceeding.
 require.
 
 `FeatureSet: ALL` is necessary but not sufficient. Service-managed StackSets also need
-trusted access enabled. Check it before Step 1:
+trusted access activated. Check it before Step 1:
 
 ```bash
-aws cloudformation describe-organizations-access --profile <management_profile>
+aws cloudformation describe-organizations-access --profile <management_profile> \
+  --query Status --output text
 ```
 
-`Status: ENABLED` means you are ready. If it reports `INACTIVE`, enable trusted access
-**from the management account** — not from a delegated admin:
+**Treat anything other than `ENABLED` as not ready.** Observed values are `ENABLED` and
+`DISABLED`; the string `INACTIVE` does not appear. AWS has already renamed this vocabulary
+once — "Activate/Deactivate Organizations Access" replaced "Enable/Disable" — so compare
+against `ENABLED` rather than matching a particular negative value.
+
+If it is not `ENABLED`, activate trusted access **from the management account** — not from a
+delegated admin:
 
 ```bash
-aws organizations enable-aws-service-access --profile <management_profile> \
-  --service-principal member.org.stacksets.cloudformation.amazonaws.com
+aws cloudformation activate-organizations-access --profile <management_profile>
 ```
 
-The principal is `member.org.stacksets.cloudformation.amazonaws.com`. Do **not** check for
+**Use the CloudFormation call, not the Organizations one.** The Organizations user guide
+states this trusted access can only be enabled through CloudFormation StackSets. Running
+`aws organizations enable-aws-service-access --service-principal member.org.stacksets.cloudformation.amazonaws.com`
+does add that principal to `list-aws-service-access-for-organization`, but it does **not**
+flip `describe-organizations-access` — observed still `DISABLED` after 60 seconds of polling.
+Only `activate-organizations-access` does, within about 15 seconds.
+
+Re-run the check and do not begin Step 1 until it returns `ENABLED`.
+
+If you do inspect the Organizations-side service list, the principal is
+`member.org.stacksets.cloudformation.amazonaws.com`. Do **not** check for
 `stacksets.cloudformation.amazonaws.com` — that name does not appear in working
 organizations and looking for it produces a false negative.
 
-When running from a delegated administrator account, add `--call-as DELEGATED_ADMIN` to
-`describe-organizations-access` and to every StackSet command.
+### Two different kinds of delegated administrator
+
+`--call-as DELEGATED_ADMIN` requires delegation for **CloudFormation StackSets
+specifically**. Being a delegated administrator for some other service does not qualify —
+even though it does confer the Organizations read-only actions the scan itself needs, as
+described under "Organizations permissions for the scanning account" below. Conflating the
+two yields `InvalidOperationException: Account used is not a delegated administrator` from
+`describe-organizations-access`, and the same message as a `ValidationError` from
+`list-stack-sets`.
+
+Check with the service principal **scoped**, from the management account:
+
+```bash
+aws organizations list-delegated-administrators --profile <management_profile> \
+  --service-principal member.org.stacksets.cloudformation.amazonaws.com \
+  --query 'DelegatedAdministrators[].[Id,Status]' --output text
+```
+
+An **unscoped** `list-delegated-administrators` is the trap: it returns accounts registered
+for any service, so an account delegated only for something else — Security Lake, say —
+appears `ACTIVE` there while every `--call-as DELEGATED_ADMIN` call still fails.
+
+If the scanning account is absent from the scoped list and you want it to drive StackSet
+operations, register it from the management account:
+
+```bash
+aws organizations register-delegated-administrator --profile <management_profile> \
+  --service-principal member.org.stacksets.cloudformation.amazonaws.com \
+  --account-id <scanning_account_id>
+```
+
+Otherwise run every StackSet command from the management account with no `--call-as`. When
+the caller *is* a registered StackSets delegated administrator, add `--call-as
+DELEGATED_ADMIN` to `describe-organizations-access` and to every StackSet command.
 
 Note that `describe-organization`'s `AvailablePolicyTypes` field is not a reliable
 inventory of enabled policy types. Use `list-roots` instead:
@@ -287,6 +334,31 @@ operator-assumable). Handle it this way:
 
 Keep `FailureToleranceCount=0`. Raising it to push past a collision hides which accounts
 were skipped and leaves the org half-deployed.
+
+## Validate both templates before deploying
+
+Both templates can be validated completely without provisioning anything. Do this before
+Step 1 rather than discovering a template or parameter problem partway through a deployment.
+Do not re-invent the procedure — the `aws-cloudformation` skill in this plugin already owns
+it:
+
+- **Syntax and schema (cfn-lint)** — the `validate-cloudformation-template` SOP.
+- **Security and compliance (cfn-guard)** — the `check-cloudformation-template-compliance` SOP.
+- **Pre-deployment validation** — the `cloudformation-pre-deploy-validation` SOP. Use its
+  change-set path: `create-change-set --change-set-type CREATE` against a stack name that does
+  not yet exist runs every validation check and provisions nothing.
+
+Two assertions worth making on these templates specifically while you are there:
+
+- `validate-template --query Capabilities` returns **`CAPABILITY_NAMED_IAM` only**, for both
+  templates. Each creates a named IAM role; neither needs `CAPABILITY_AUTO_EXPAND`.
+- The solution template's change set lists a **`Custom::CodeBuildStartBuild`** resource. That
+  is the resource that makes creating the stack start a scan, so showing it in the plan is the
+  cheapest way to demonstrate to the user that the cost is real *before* they approve.
+
+Follow that SOP's cleanup guidance: a `CREATE`-type change set leaves the stack in
+`REVIEW_IN_PROGRESS`, so delete the change set and then the stack, or the next create against
+that name is blocked.
 
 ## Cost drivers to state before approval
 
