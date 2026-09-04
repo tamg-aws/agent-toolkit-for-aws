@@ -44,7 +44,7 @@ aws cloudformation validate-template --profile <scanning_profile> \
 | `MultiAccountScan` | `'false'` | **Must be `'true'` to scan more than the scanning account.** Also toggles whether a local member role is created — see Step 1 |
 | `MultiAccountListOverride` | `''` | **Space**-delimited account list. Only read when `MultiAccountScan='true'` |
 | `ConcurrentAccountScans` | `'Three'` | `Three` / `Six` / `Twelve` / `FortyEight`; also sets compute size |
-| `CodeBuildTimeout` | `300` | Minutes. Maximum accepted is **2160** |
+| `CodeBuildTimeout` | `300` | Minutes. Accepted range is **5** to **2160** |
 | `Reporting` | `'true'` | Creates Glue database, table, Athena workgroup and the reporting chain |
 | `ProwlerRole` | `ProwlerMemberRole` | **Leave at the default** — see `references/troubleshooting.md` |
 | `ProwlerOptions` | `aws --ignore-exit-code-3` | Base Prowler flags; tier options are appended |
@@ -66,15 +66,27 @@ That surfaces `AllowedValues` and the current tiers. Note `validate-template` do
 return `AllowedValues` — its parameter shape carries only `ParameterKey`, `DefaultValue`,
 `NoEcho` and `Description`, so use it for the description text, not the tier list.
 
-| Tier | Prowler flags | Scope (per the template's own description) |
-|---|---|---|
-| `Basic` | `-c` plus 13 named checks | 13 checks |
-| `Intermediate` (default) | `--severity critical high` | 109+ critical and high checks |
-| `Full` | `''` (empty) | 383+ checks — every check, no filter |
+| Tier | Prowler flags | Template's own description | Actual, at `prowler==5.11` |
+|---|---|---|---|
+| `Basic` | `-c` plus 13 named checks | 13 checks | **13** |
+| `Intermediate` (default) | `--severity critical high` | 109+ critical and high checks | **171** |
+| `Full` | `''` (empty) | 383+ checks — every check, no filter | **572** |
+
+**The template's own parameter description is stale for the two filtered tiers**, and both
+columns are kept above so the mismatch is visible rather than surprising. `109+` and `383+`
+each understate the real count by roughly a third of it — put the other way, the real counts
+are about 50% higher than the template claims. Size against the right-hand column: a live
+`Full` run on the pinned version logged `572/572` checks, which matches `full_checks.txt`
+exactly.
 
 Resolved check lists ship as `checks/basic_checks.txt`, `checks/intermediate_checks.txt` and
 `checks/full_checks.txt`, with `checks/get-checks.sh` to regenerate them. Read those for
-exact membership — they travel with the pinned Prowler version.
+exact membership — they travel with the pinned Prowler version. Each file also ends with its
+own count, so read that rather than trusting any number written here:
+
+```bash
+grep -h 'There are .* available checks' checks/*_checks.txt
+```
 
 `Full` is bounded only by `CodeBuildTimeout`. Before selecting it, multiply expected
 per-account duration by account count divided by `ConcurrentAccountScans` and compare
