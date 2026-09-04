@@ -50,6 +50,14 @@ Two templates at the repository root:
    `create-stack-set`, or `create-stack-instances`, because each creates, modifies, or
    deletes live infrastructure. Display the exact command and wait.
 
+   Approval may be given in advance, but only narrowly. It counts as pre-authorization
+   when it names the specific operations it covers and, for creating the solution stack,
+   acknowledges that the create starts a scan and incurs its cost. A blanket "go ahead"
+   does not qualify. Pre-authorization changes nothing else: still run the identity check
+   in rule 2, still read before each write and verify after it (rules 4 and 5), and
+   record every command as it runs so the user can audit exactly what their approval
+   covered. With no user available to ask and no such pre-authorization, do not deploy.
+
 2. **Echo identity and confirm before acting.** Before the first deploy step, run
    `aws sts get-caller-identity` and `aws organizations describe-organization`, then echo
    the account ID, caller ARN, resolved region, and whether that account is the
