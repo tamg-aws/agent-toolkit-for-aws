@@ -13,7 +13,10 @@ target different ones. Never rely on an ambient default. Throughout:
 - `<region>` — the single region for the member-role StackSet
 
 If StackSets is delegated to the scanning account, append `--call-as DELEGATED_ADMIN` to
-every StackSet command. Omitting it does not error — it silently returns empty results.
+every StackSet command. Omitting it fails in two different ways: `list-stack-sets` and
+`list-stack-instances` silently return empty, while `describe-organizations-access` and the
+write calls fail with `ValidationError: You must be the management account or delegated admin
+account of an organization before operating a SERVICE_MANAGED stack set`.
 
 ## Templates
 
@@ -216,7 +219,9 @@ aws cloudformation describe-stacks --profile <management_profile> \
 ```
 
 `present`, or any status other than a "does not exist" error, means this step was already
-done: report it and reuse rather than creating a second copy.
+done: report it and reuse rather than creating a second copy — except a stack in
+`ROLLBACK_COMPLETE`, which cannot be updated: with approval under rule 1, delete it and
+recreate.
 
 ```bash
 aws cloudformation create-stack --profile <management_profile> \
@@ -255,7 +260,9 @@ aws codebuild batch-get-projects --profile <scanning_profile> \
 ```
 
 Anything but a "does not exist" error and an empty project list means SATv2 is already
-deployed here under some name — see the footprint sweep in `references/prerequisites.md`.
+deployed here under some name — see the footprint sweep in `references/prerequisites.md`. A
+`ROLLBACK_COMPLETE` stack cannot be updated or reused; it must be deleted (rule 1) before any
+recreate.
 
 ```bash
 aws cloudformation create-stack --profile <scanning_profile> \
@@ -335,7 +342,7 @@ numbers from more than one run.
 ## Cleanup
 
 Delete in reverse order, and state plainly what is retained. Every command here is a write
-under rule 1 — the four below and the two organization-level ones further down — so obtain
+under rule 1 — the four below and the three organization-level ones further down — so obtain
 approval for each before running it:
 
 ```bash
@@ -349,7 +356,22 @@ aws cloudformation delete-stack-set --profile <management_profile> \
   --stack-set-name <stack_set_name>
 ```
 
-If a delegation policy was added solely for this, remove or trim it.
+If a delegation policy was added solely for this, trim it — with approval, since it is an
+organization-level write on a replace-not-append API. Read the current document first, remove
+only the `SATv2ListAccounts` statement, write the trimmed document back, and re-read to confirm
+every other statement survived. Use `delete-resource-policy` only when that statement was the
+whole policy. Like the forward path in `references/prerequisites.md`, this has not been
+exercised live by this skill's authors.
+
+```bash
+aws organizations describe-resource-policy --profile <management_profile> \
+  --query 'ResourcePolicy.Content' --output text > current-policy.json
+# edit current-policy.json: delete the statement whose Sid is SATv2ListAccounts, nothing else
+aws organizations put-resource-policy --profile <management_profile> \
+  --content file://current-policy.json
+aws organizations describe-resource-policy --profile <management_profile> \
+  --query 'ResourcePolicy.Content' --output text
+```
 
 If **trusted access** was activated solely for this, it can be reversed — but only
 deliberately. It is an organization-wide setting, unrelated service-managed StackSets depend

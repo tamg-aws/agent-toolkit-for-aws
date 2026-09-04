@@ -219,7 +219,8 @@ exactly as under "The member accounts you cannot pre-check" in `references/prere
 note the response key is `OperationEvents`, not `Events`. On a rolled-back plain stack this is
 documented behaviour, not something this skill's authors exercised live. If `OperationEvents`
 comes back empty, fall back to a diagnostic change set, which surfaces the same validation
-without executing anything:
+without executing anything. Creating and deleting the change set are gated writes under rule 1
+even though they provision no resources:
 
 ```bash
 aws cloudformation create-change-set --profile <scanning_profile> \
@@ -236,8 +237,9 @@ aws cloudformation delete-change-set --profile <scanning_profile> \
 on a deployment whose StackSet already placed `ProwlerMemberRole` in the scanning account
 makes the stack try to create a role that exists. CloudFormation rejects this during
 validation, before touching resources, so the rollback is clean and nothing is left
-half-changed — but the update cannot succeed until the existing role is removed or the
-setting is left at `'true'`.
+half-changed — but the update cannot succeed until the setting is left at `'true'` or the
+existing role is gone. This skill does not delete a role it did not create; that is the
+account owner's decision, after confirming nothing else assumes it.
 
 ## Athena query fails on a missing or unexpected column
 

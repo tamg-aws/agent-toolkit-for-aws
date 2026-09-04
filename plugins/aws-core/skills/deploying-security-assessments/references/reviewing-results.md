@@ -78,31 +78,41 @@ Created only when `Reporting` is `'true'` (the default).
   findings per `check_id` across assessed accounts. It filters `WHERE status = 'FAIL'`, so it
   is not a count of all findings, and **nothing invokes it automatically**.
 
-### Lake Formation may govern this table — check which regime the account is in
+### Lake Formation may govern this table
 
 Whether Lake Formation or plain IAM decides who can query `prowler` is a property of the
 **account's** data lake settings, not of the SATv2 template. The template makes exactly one
 Lake Formation grant — `SELECT` to the reporting Lambda's role — and otherwise leaves the
-account's defaults in force. Read them before assuming anything:
+account's defaults in force. Two reads settle which regime the existing table is in:
 
 ```bash
+# 1. The grants on the prowler table itself — this is the decisive check
+aws lakeformation list-permissions --profile <scanning_profile> \
+  --resource '{"Table":{"CatalogId":"<scanning_account_id>","DatabaseName":"<bucket>","Name":"prowler"}}' \
+  --query 'PrincipalResourcePermissions[].[Principal.DataLakePrincipalIdentifier,Permissions]' --output text
+# 2. The account defaults — what a NEW deployment will inherit
 aws lakeformation get-data-lake-settings --profile <scanning_profile> \
   --query 'DataLakeSettings.[CreateDatabaseDefaultPermissions,CreateTableDefaultPermissions]' \
   --output json
 ```
 
-**Both lists show `IAM_ALLOWED_PRINCIPALS` with `ALL`** — the AWS default, "Use only IAM
-access control", and what a stock account looks like (observed). IAM alone governs the table:
-any principal with the Glue, Athena and S3 permissions can query it, and none of the Lake
-Formation guidance below applies. An Athena `AccessDenied` here is an ordinary IAM problem —
+The defaults apply at creation time, so they describe the table only if they have not changed
+since the stack created it; the grants on the table are what actually decide access.
+
+**`IAM_ALLOWED_PRINCIPALS` holds `ALL` on the table** (and, for a fresh deployment, both
+default lists show it) — the AWS default, "Use only IAM access control", and what a stock
+account's defaults look like (observed). IAM alone governs the table: any principal with the
+Glue, Athena and S3 permissions can query it, and none of the Lake Formation guidance below
+applies. An Athena `AccessDenied` here is an ordinary IAM problem —
 `glue:GetTable`/`GetDatabase`, `athena:StartQueryExecution`/`GetQueryResults`, `s3:GetObject`
 on `csv/` and `s3:PutObject` on `athena_results/` — and should be diagnosed as one.
 
-**Either list is empty.** Lake Formation governs the table with no `IAMAllowedPrincipals`
-fallback. This is what an account that has adopted Lake Formation looks like, and **Security
-Lake puts an account here**: its metastore role is a data lake admin and its setup clears those
-defaults. Both organizations this skill's authors observed were Security Lake accounts, which
-is why the rest of this section exists. In this regime only the deploying principal and the
+**No `IAM_ALLOWED_PRINCIPALS` grant on the table** (and empty default lists). Lake Formation
+governs it with no fallback. This is what an account that has adopted Lake Formation looks
+like. Both accounts this skill's authors observed in this regime run Security Lake, whose
+metastore role was a data lake admin in each — but whether Security Lake's setup is what
+cleared the defaults is not confirmed by its documentation, so read the grants rather than
+inferring the regime from Security Lake's presence. In this regime only the deploying principal and the
 reporting Lambda's role hold `SELECT`, and **any other principal gets an Athena `AccessDenied`
 that no IAM policy explains** — IAM admin is not sufficient.
 

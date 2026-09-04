@@ -52,10 +52,14 @@ Two templates at the repository root:
    organization-wide and account-wide settings this skill also instructs:
    `cloudformation activate-organizations-access` / `deactivate-organizations-access`,
    `organizations register-delegated-administrator` / `deregister-delegated-administrator`,
-   the Organizations delegation policy (`put-resource-policy`), and
-   `lakeformation grant-permissions`. That list is illustrative, not exhaustive: if a
-   command changes state, it needs approval. Display the exact command and wait. Deleting
-   the throwaway dry-run stack from the validation step is a `delete-stack` and counts.
+   the Organizations delegation policy (`put-resource-policy` to add or trim,
+   `delete-resource-policy` to remove), and `lakeformation grant-permissions` — plus
+   `codebuild start-build`, which starts a billable scan, and
+   `create-change-set` / `delete-change-set`, which create and remove a stack record even
+   though they provision no resources. That list is meant to be complete enough for a
+   pre-authorization to name; if a command changes state and is not on it, it still needs
+   approval. Display the exact command and wait. Deleting the throwaway dry-run stack from
+   the validation step is a `delete-stack` and counts.
 
    Approval may be given in advance, but only narrowly. It counts as pre-authorization
    when it names the specific operations it covers — including any of the
@@ -126,15 +130,17 @@ stops the deployment partway through:
 
 - Which account is the **management account**, and whether the user can obtain
   credentials for it. Management-account access is required at several points — the
-  StackSet, the management account's own role stack, trusted-access activation, any
+  StackSet (unless StackSets is delegated to the scanning account), the management
+  account's own role stack, trusted-access activation, any
   delegated-administrator registration or delegation policy, and reversing each at
   cleanup — and is not optional. `references/prerequisites.md` enumerates them.
 - Whether `aws cloudformation describe-organizations-access` returns `ENABLED`. If not,
   activating trusted access is a management-account, organization-wide write that needs
   approval under rule 1 before Step 1 can run.
 - Which account will be the **scanning account** (the workshop uses the audit account).
-- Whether the scanning account can call `aws organizations list-accounts`. If not, an
-  Organizations delegation policy is required first.
+- Whether the scanning account can call `aws organizations list-accounts`. If not, check
+  whether it is already a delegated administrator for any service; only if it is not does it
+  need an Organizations delegation policy — an organization-level write.
 - The **home region** for the StackSet — the member-role StackSet deploys to one region.
 
 ## Task registry

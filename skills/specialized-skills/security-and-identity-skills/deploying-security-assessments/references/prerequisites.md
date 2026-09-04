@@ -187,7 +187,11 @@ even though it does confer the Organizations read-only actions the scan itself n
 described under "Organizations permissions for the scanning account" below. Conflating the
 two yields `InvalidOperationException: Account used is not a delegated administrator` from
 `describe-organizations-access`, and the same message as a `ValidationError` from
-`list-stack-sets`.
+`list-stack-sets`. The opposite mistake — a registered StackSets delegated administrator
+omitting `--call-as` — is not silent everywhere either: `list-stack-sets` and
+`list-stack-instances` return empty, but `describe-organizations-access` and the write calls
+fail with `ValidationError: You must be the management account or delegated admin account of
+an organization before operating a SERVICE_MANAGED stack set` (observed).
 
 Check with the service principal **scoped**, from the management account:
 
@@ -310,15 +314,17 @@ The statement to add:
 Run `describe-resource-policy` again and confirm every pre-existing statement is still present
 before re-testing `list-accounts` from the scanning account. The console route
 (**Organizations → Settings → Delegated administrator for AWS Organizations → Edit**) shows
-the same document and is a reasonable alternative when merging by hand. This read-merge-write
-path is taken from the upstream README and has **not** been exercised in a live run by this
-skill's authors — every test organization so far already had a delegated administrator.
+the same document and is a reasonable alternative when merging by hand. The upstream README's
+step 8b writes the policy whole; the read-and-merge step is this skill's addition, and it has
+**not** been exercised in a live run by this skill's authors — every test organization so far
+already had a delegated administrator.
 
 Two cautions:
 
-- **GovCloud has no Organizations resource policies.** Per the upstream README the only routes
-  there are an existing delegated-administrator registration or `MultiAccountListOverride`
-  (see `references/troubleshooting.md`). That claim is the README's, not observed here —
+- **GovCloud has no Organizations resource policies.** The upstream README says so and routes
+  GovCloud to its step 8a — registering a delegated administrator (see "Two different kinds of
+  delegated administrator" above; approval-gated). `MultiAccountListOverride` is this skill's
+  own fallback, not the README's. The GovCloud claim is the README's, not observed here —
   verify current availability before advising.
 - The principal ARN is hardcoded to the `aws` partition. In China, substitute `aws-cn`.
 
@@ -366,7 +372,8 @@ has produced false "clean install" verdicts.
 
 From a delegated administrator account, `list-stack-sets` returns an empty list rather than
 an error unless you pass `--call-as DELEGATED_ADMIN` — another route to a false "clean
-install". Add the flag whenever the caller is not the management account.
+install" (the describe and write calls, by contrast, fail loudly with a `ValidationError`).
+Add the flag whenever the caller is not the management account.
 
 Run these in **both** the management account and the scanning account. Checking only one
 account misses an existing deployment in the other — a SATv2 solution stack lives in the
@@ -446,9 +453,11 @@ operator-assumable). Handle it this way:
    way to know in advance.
 
    To converge afterwards: `delete-stack-instances --no-retain-stacks` clears the `OUTDATED`
-   instance; then either remove the pre-existing role and rerun `create-stack-instances`
-   (observed `SUCCEEDED`/`CURRENT`), or keep the existing role and exclude that account with
-   `AccountFilterType=DIFFERENCE`.
+   instance (a gated write). Then either keep the existing role and exclude that account with
+   `AccountFilterType=DIFFERENCE`, or — if the account owner removes the pre-existing role —
+   rerun `create-stack-instances` (observed `SUCCEEDED`/`CURRENT`). This skill does not delete
+   a role it did not create: another team or scanner may depend on it, so the owner decides,
+   after checking `get-role --query Role.RoleLastUsed` for recent use.
 
 On `FailureToleranceCount` and concurrency, see Step 1 in `references/satv2-deployment.md` —
 the rationale lives there once, not here.
@@ -499,9 +508,10 @@ Run the dry run against a **throwaway stack name** — `SATv2-preflight`, not `S
 shell it leaves behind can never block the real create, even if cleanup is skipped or fails.
 "Provisions nothing" is true of resources, not of the stack record: a `CREATE`-type change set
 leaves a `REVIEW_IN_PROGRESS` stack with zero resources, and the footprint sweep above lists it
-as an existing SATv2 stack on every later run. Removing it is a `delete-stack` and falls under
-rule 1 — name it in any pre-authorization — so, with approval, delete the change set and then
-the stack, as the SOP's cleanup guidance says.
+as an existing SATv2 stack on every later run. Creating the change set is itself a gated write
+under rule 1, as is deleting it, and removing the stack is a `delete-stack` — name all three in
+any pre-authorization — so, with approval, delete the change set and then the stack, as the
+SOP's cleanup guidance says.
 
 ## Cost drivers to state before approval
 
