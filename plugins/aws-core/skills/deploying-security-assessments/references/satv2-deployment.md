@@ -1,0 +1,469 @@
+# SATv2 Deployment Procedure
+
+Prerequisites in `references/prerequisites.md` MUST be complete first. Every step requires
+explicit user approval before execution.
+
+**Pass `--profile` on every command.** This procedure spans two accounts and adjacent steps
+target different ones. Never rely on an ambient default. Throughout:
+
+- `<management_profile>` — a profile for the management account
+- `<scanning_profile>` — a profile for the account that will run CodeBuild
+- `<scanning_account_id>` — that account's 12-digit ID
+- `<stack_set_name>` — the StackSet name you choose in Step 1
+- `<region>` — the single region for the member-role StackSet
+
+If StackSets is delegated to the scanning account, append `--call-as DELEGATED_ADMIN` to
+every StackSet command. Omitting it fails in two different ways: `list-stack-sets` and
+`list-stack-instances` silently return empty, while `describe-organizations-access` and the
+write calls fail with `ValidationError: You must be the management account or delegated admin
+account of an organization before operating a SERVICE_MANAGED stack set`.
+
+When both routes are open — the scanning account is a StackSets delegated administrator *and*
+management credentials are available — prefer the management account with no `--call-as`: the
+steps below are written for `<management_profile>`, and it sidesteps every `--call-as` failure
+mode.
+
+## Templates
+
+Fetch from the repository root rather than embedding copies, so parameters and the Prowler
+pin stay current:
+
+```bash
+BASE=https://raw.githubusercontent.com/awslabs/aws-security-assessment-solution/main
+curl -sSfL $BASE/1-sat2-member-roles.yaml      -o 1-sat2-member-roles.yaml
+curl -sSfL $BASE/2-sat2-codebuild-prowler.yaml -o 2-sat2-codebuild-prowler.yaml
+aws cloudformation validate-template --profile <scanning_profile> \
+  --template-body file://1-sat2-member-roles.yaml --query Capabilities
+```
+
+## Parameters
+
+`1-sat2-member-roles.yaml`:
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `ProwlerAccountID` | `'012345678910'` | The **scanning** account. Pattern `\d{12}`. The workshop text called this `AuditAccountId` as of 2026-09 — that name is wrong. |
+
+`2-sat2-codebuild-prowler.yaml`:
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `ProwlerScanType` | `'Intermediate'` | `Basic` / `Intermediate` / `Full` |
+| `MultiAccountScan` | `'false'` | **Must be `'true'` to scan more than the scanning account.** Also toggles whether a local member role is created — see Step 1 |
+| `MultiAccountListOverride` | `''` | **Space**-delimited account list. Only read when `MultiAccountScan='true'` |
+| `ConcurrentAccountScans` | `'Three'` | `Three` / `Six` / `Twelve` / `FortyEight`; also sets compute size |
+| `CodeBuildTimeout` | `300` | Minutes. Accepted range is **5** to **2160** |
+| `Reporting` | `'true'` | Creates Glue database, table, Athena workgroup and the reporting chain |
+| `ProwlerRole` | `ProwlerMemberRole` | **Leave at the default** — see `references/troubleshooting.md` |
+| `ProwlerOptions` | `aws --ignore-exit-code-3` | Base Prowler flags; tier options are appended |
+| `EmailAddress` | `''` | Optional notification target |
+
+Both templates require `CAPABILITY_NAMED_IAM`, because each creates an IAM role with an
+explicit `RoleName`.
+
+## Scan tiers
+
+Read the tier list from the template you fetched rather than trusting this table — upstream
+adds and removes tiers:
+
+```bash
+grep -A8 '^  ProwlerScanType:' 2-sat2-codebuild-prowler.yaml
+```
+
+That surfaces `AllowedValues` and the current tiers. Note `validate-template` does **not**
+return `AllowedValues` — its parameter shape carries only `ParameterKey`, `DefaultValue`,
+`NoEcho` and `Description`, so use it for the description text, not the tier list.
+
+| Tier | Prowler flags | Template's own description | Actual, at `prowler==5.11` |
+|---|---|---|---|
+| `Basic` | `-c` plus 13 named checks | 13 checks | **13** |
+| `Intermediate` (default) | `--severity critical high` | 109+ critical and high checks | **171** |
+| `Full` | `''` (empty) | 383+ checks — every check, no filter | **572** |
+
+**The template's own parameter description is stale for the two filtered tiers**, and both
+columns are kept above so the mismatch is visible rather than surprising. `109+` and `383+`
+each understate the real count by roughly a third of it — put the other way, the real counts
+are about 50% higher than the template claims. Size against the right-hand column: a live
+`Full` run on the pinned version logged `572/572` checks, which matches `full_checks.txt`
+exactly.
+
+Choose the tier by the question being asked, not by the bill. What each one is for:
+
+- **`Basic`** is a pipeline smoke test — 13 checks prove the roles, discovery, and reporting
+  chain work. It is the right tier for a pilot or a first run in a new organization, and the
+  wrong one for answering "are my resources configured to best practice": a clean `Basic`
+  result says almost nothing about posture.
+- **`Intermediate`**, the default, is the posture-assessment tier — every critical and high
+  check.
+- **`Full`** adds the medium and low checks and is the only tier observed to emit the
+  `compliance/` framework CSVs.
+
+On a small organization the cost difference between tiers is cents, because CodeBuild's fixed
+overhead dominates. If the user has stated a tier or a cost ceiling, follow it; otherwise
+recommend the tier that answers their question and name the cost, rather than defaulting to
+the cheapest.
+
+Resolved check lists ship as `checks/basic_checks.txt`, `checks/intermediate_checks.txt` and
+`checks/full_checks.txt`, with `checks/get-checks.sh` to regenerate them. Read those for
+exact membership — they travel with the pinned Prowler version. Each file also ends with its
+own count, so read that rather than trusting any number written here:
+
+```bash
+grep -h 'There are .* available checks' checks/*_checks.txt
+```
+
+`Full` is bounded only by `CodeBuildTimeout`. Before selecting it, multiply the slowest
+account's expected duration by the number of waves — account count divided by the
+**effective** concurrency — and compare against the timeout. Effective concurrency is not
+`ConcurrentAccountScans`: the upstream buildspec throttles on `jobs | wc -l`, each backgrounded
+brace-group prints three lines, so the real parallelism is `ConcurrentAccountScans ÷ 3`
+(`Three` → 1 account at a time, `Six` → 2, `Twelve` → 4, `FortyEight` → 16), and the bare
+`wait` then blocks until the whole wave has finished, so one slow account holds every later
+wave. Verified twice: a local reproduction of the throttle, and a live `Six` run of four
+accounts that started two Prowler processes, then the other two only after both had completed.
+The fix belongs upstream (`jobs -p | wc -l`); do not patch the template locally — fetch it from
+upstream as the templates section says. Use `Six` or higher for anything beyond a pilot;
+`Three` is serial on the smallest compute type.
+
+Measured anchors for that formula — `Full` on the pinned Prowler, four small accounts (937 to
+15,467 findings each), two runs: per-account times of **3½, 6½, 12 and 36 minutes**, the
+largest account being the slow one, and a wall clock of about **52 minutes** with `Six`, which
+was two waves of two, not one. Treat 36 minutes as what the largest of these accounts costs,
+not as a floor for yours; accounts with more resources take proportionally longer, so scale
+from your own account sizes.
+For the lighter tiers on even smaller accounts (under 100 `Basic` findings each, n=2):
+`Basic` ran 13 checks in about 1¼ minutes per account and `Intermediate` ran 171 in about
+2½, with a 7-minute wall clock for two accounts including the CodeBuild install phase.
+
+If an existing stack was deployed against an older template, it may hold a
+`ProwlerScanType` value the current template no longer offers. Pass `ProwlerScanType`
+explicitly on any update rather than reusing the previous value — see "Updating the stack"
+below for the full command.
+
+## Deployment sequence
+
+### Step 1 — member roles to member accounts (management account)
+
+Read first — is a member-role StackSet already present? From a delegated administrator add
+`--call-as DELEGATED_ADMIN`, or this returns empty:
+
+```bash
+aws cloudformation list-stack-sets --profile <management_profile> --status ACTIVE \
+  --query 'Summaries[].[StackSetName,PermissionModel,Status]' --output text
+```
+
+Choose the deployment target deliberately:
+
+- **Org root** (`organizations list-roots`) when `MultiAccountScan='true'` with an empty
+  `MultiAccountListOverride`. The buildspec then enumerates every ACTIVE account —
+  including the scanning account, which gets **no** local role under that setting — so all
+  of them need the StackSet's role.
+- **A single OU** only when the scan is scoped by `MultiAccountListOverride` to accounts
+  that OU covers. A staged one-OU rollout combined with an empty override will fail on
+  every account the StackSet has not reached.
+
+Either way, service-managed deployment **excludes the management account** — Step 2 covers
+it separately.
+
+```bash
+aws cloudformation create-stack-set --profile <management_profile> \
+  --stack-set-name <stack_set_name> \
+  --template-body file://1-sat2-member-roles.yaml \
+  --parameters ParameterKey=ProwlerAccountID,ParameterValue=<scanning_account_id> \
+  --permission-model SERVICE_MANAGED \
+  --auto-deployment Enabled=true,RetainStacksOnAccountRemoval=false \
+  --capabilities CAPABILITY_NAMED_IAM
+
+aws cloudformation create-stack-instances --profile <management_profile> \
+  --stack-set-name <stack_set_name> \
+  --deployment-targets OrganizationalUnitIds=<root_or_ou_id> \
+  --regions <region> \
+  --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1
+```
+
+Under the default strict concurrency mode `MaxConcurrentCount` cannot exceed
+`FailureToleranceCount + 1`, so the preferences above deploy **one account at a time** — a
+minute or two each — and Step 4 cannot start until the last one lands. For a large
+organization use
+`--operation-preferences ConcurrencyMode=SOFT_FAILURE_TOLERANCE,FailureToleranceCount=0,MaxConcurrentPercentage=25`
+instead: the soft mode keeps stop-at-first-failure while deploying in parallel. State the
+expected rollout time to the user either way. The strict settings were exercised live by this
+skill's authors. The soft-mode syntax was also exercised: the CLI accepts it and sends
+`OperationPreferences.ConcurrencyMode=SOFT_FAILURE_TOLERANCE` on the wire, and the operation
+succeeded — but `describe-stack-set-operation` does not echo the mode back, and with a single
+target account the parallel behaviour cannot be told apart from strict mode, so the speed-up
+itself is documented, not observed.
+
+`--auto-deployment` and `--call-as DELEGATED_ADMIN` are valid only with
+`--permission-model SERVICE_MANAGED`. Auto-deployment is what covers accounts added later.
+
+Verify — do not proceed until the operation reports `SUCCEEDED`:
+
+```bash
+aws cloudformation list-stack-set-operations --profile <management_profile> \
+  --stack-set-name <stack_set_name> \
+  --query 'Summaries[0].[OperationId,Status]' --output text
+
+aws cloudformation list-stack-instances --profile <management_profile> \
+  --stack-set-name <stack_set_name> \
+  --query 'Summaries[?Status!=`CURRENT`].[Account,Status,StatusReason]' --output text
+```
+
+An empty second result means every instance is current. A `StatusReason` reading
+`Validation failed with 1 error(s). Call DescribeEvents…` is what a pre-existing
+`ProwlerMemberRole` looks like — the message never names the role or says `AlreadyExists`,
+and from the management account it cannot be told apart from other validation failures. See
+"The member accounts you cannot pre-check" in `references/prerequisites.md` for how to
+confirm it and how to converge.
+
+Keep `FailureToleranceCount=0`, but for the right reason: it stops the operation at the first
+failure so you can read `list-stack-instances` and converge deliberately. It is *not* what
+makes skipped accounts visible — the `Status!=CURRENT` query above does that at any tolerance
+— and a halted operation *is* a half-deployed organization until you converge it, which is
+why the convergence steps in `references/prerequisites.md` exist.
+
+Rollback: `delete-stack-instances --no-retain-stacks`, then `delete-stack-set`. Both are
+approval-gated writes under rule 1.
+
+### Step 2 — member role to the management account (management account)
+
+StackSets do not reach the management account, so deploy the **same template** there as a
+plain stack. Without this, the management account cannot be assessed.
+
+Read first — does the management account already have the role or the stack?
+
+```bash
+aws iam get-role --profile <management_profile> --role-name ProwlerMemberRole >/dev/null 2>&1 \
+  && echo "present" || echo "absent"
+aws cloudformation describe-stacks --profile <management_profile> \
+  --stack-name SATv2-ProwlerMemberRole-Management --query 'Stacks[0].StackStatus' --output text 2>&1
+```
+
+`present`, or any status other than a "does not exist" error, means this step was already
+done: report it and reuse rather than creating a second copy — except a stack in
+`ROLLBACK_COMPLETE`, which cannot be updated: with approval under rule 1, delete it and
+recreate.
+
+```bash
+aws cloudformation create-stack --profile <management_profile> \
+  --stack-name SATv2-ProwlerMemberRole-Management \
+  --template-body file://1-sat2-member-roles.yaml \
+  --parameters ParameterKey=ProwlerAccountID,ParameterValue=<scanning_account_id> \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Verify:
+
+```bash
+aws cloudformation describe-stacks --profile <management_profile> \
+  --stack-name SATv2-ProwlerMemberRole-Management --query 'Stacks[0].StackStatus' --output text
+aws iam get-role --profile <management_profile> --role-name ProwlerMemberRole \
+  --query 'Role.Arn' --output text
+```
+
+### Step 3 — Organizations access preflight (scanning account)
+
+Run the check in `references/prerequisites.md`. Resolve it before Step 4 — otherwise the
+failure surfaces mid-build, after the stack exists.
+
+### Step 4 — the solution stack (scanning account)
+
+**Creating this stack starts the scan.** Confirm the user is approving the scan and its cost,
+not only the infrastructure. State the tier, the account count and the concurrency first, with
+the drivers under "Cost drivers to state before approval" in `references/prerequisites.md`. The
+example uses `ConcurrentAccountScans=Six` because `Three` scans one account at a time — see the
+concurrency note under "Scan tiers".
+
+Read first — the solution stack, or its fixed-name resources under some other stack name:
+
+```bash
+aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
+  --query 'Stacks[0].StackStatus' --output text 2>&1
+aws codebuild batch-get-projects --profile <scanning_profile> \
+  --names ProwlerCodeBuild ProwlerReportingCodeBuild --query 'projects[].name' --output text
+```
+
+Anything but a "does not exist" error and an empty project list means SATv2 is already
+deployed here under some name — see the footprint sweep in `references/prerequisites.md`. A
+`ROLLBACK_COMPLETE` stack cannot be updated or reused; it must be deleted (rule 1) before any
+recreate.
+
+```bash
+aws cloudformation create-stack --profile <scanning_profile> \
+  --stack-name SATv2 \
+  --template-body file://2-sat2-codebuild-prowler.yaml \
+  --parameters \
+    ParameterKey=ProwlerScanType,ParameterValue=Intermediate \
+    ParameterKey=MultiAccountScan,ParameterValue=true \
+    ParameterKey=ConcurrentAccountScans,ParameterValue=Six \
+    ParameterKey=CodeBuildTimeout,ParameterValue=300 \
+    ParameterKey=Reporting,ParameterValue=true \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Follow the build:
+
+```bash
+aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
+  --query 'Stacks[0].StackStatus' --output text
+
+BUILD_ID=$(aws codebuild list-builds-for-project --profile <scanning_profile> \
+  --project-name ProwlerCodeBuild --sort-order DESCENDING --query 'ids[0]' --output text)
+
+aws codebuild batch-get-builds --profile <scanning_profile> --ids "$BUILD_ID" \
+  --query 'builds[0].[buildStatus,currentPhase]' --output text
+```
+
+Runtime is tier-dependent, so read this against the tier you chose. Expect minutes for a few
+accounts at `Basic` or `Intermediate`. At `Full`, four small accounts measured 52 minutes wall
+clock with `ConcurrentAccountScans=Six` — two waves of two, because of the concurrency bug
+described under "Scan tiers" — and an organization-wide `Full` scan runs to hours.
+
+Confirm which accounts were actually reached — see `references/troubleshooting.md`. The
+build status alone does not tell you: per-account failures are recorded inside a
+backgrounded subshell and never reach the build's exit path.
+
+## Multi-account scanning
+
+`MultiAccountScan` defaults to `'false'`, in which case the buildspec logs
+`Running a single account scan.` and scans only the scanning account.
+
+`MultiAccountListOverride` is read **only** when `MultiAccountScan='true'`. It is not an
+alternative to that setting — on its own it is inert. The list is **space**-delimited:
+
+```bash
+--parameters ParameterKey=MultiAccountScan,ParameterValue=true \
+             ParameterKey=MultiAccountListOverride,ParameterValue="111111111111 222222222222"
+```
+
+Use the override to pilot against two or three accounts before scanning the organization,
+or when the scanning account cannot enumerate the organization. With it empty, discovery
+uses `organizations list-accounts` filtered to `Status==ACTIVE`.
+
+**Clear it once the pilot passes.** An override left in place silently caps every later scan at
+the accounts it names, and nothing in the build status or the output says so — see
+`references/troubleshooting.md`. Clearing it takes the update under "Updating the stack" below
+— passing every other parameter as `UsePreviousValue=true`, or the update resets them — **and**
+a fresh `start-build`, because the update alone starts no scan (both rule 1).
+
+## Updating the stack
+
+Every change to a deployed `SATv2` stack — clearing a pilot override, changing tier or
+concurrency, adding `-M … json-asff` to `ProwlerOptions` — goes through one command, and it has
+one trap: **a parameter you omit from `--parameters` reverts to the template default, not to
+its current value.** Naming only the parameter you mean to change therefore resets
+`ProwlerScanType` to `Intermediate`, `Reporting` to `'true'` and `MultiAccountScan` to
+`'false'` — and that last one both narrows the next scan to the scanning account (trap 1) and
+makes the template try to create a local `ProwlerMemberRole`, which collides with the
+StackSet's copy and rolls the update back (see `references/troubleshooting.md`). Pass every
+parameter, either with its intended value or with `UsePreviousValue=true`. This is a gated
+write under rule 1.
+
+```bash
+aws cloudformation update-stack --profile <scanning_profile> --stack-name SATv2 \
+  --use-previous-template --capabilities CAPABILITY_NAMED_IAM \
+  --parameters \
+    ParameterKey=ProwlerScanType,UsePreviousValue=true \
+    ParameterKey=MultiAccountScan,UsePreviousValue=true \
+    ParameterKey=MultiAccountListOverride,ParameterValue="" \
+    ParameterKey=ConcurrentAccountScans,UsePreviousValue=true \
+    ParameterKey=CodeBuildTimeout,UsePreviousValue=true \
+    ParameterKey=Reporting,UsePreviousValue=true \
+    ParameterKey=ProwlerRole,UsePreviousValue=true \
+    ParameterKey=ProwlerOptions,UsePreviousValue=true \
+    ParameterKey=EmailAddress,UsePreviousValue=true
+aws cloudformation wait stack-update-complete --profile <scanning_profile> --stack-name SATv2
+aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
+  --query 'Stacks[0].Parameters[].[ParameterKey,ParameterValue]' --output text
+```
+
+The example clears `MultiAccountListOverride`; substitute whichever parameter you are changing.
+`--use-previous-template` keeps the Prowler pin and the Glue schema exactly as deployed. Read the
+parameters back afterwards and confirm nothing else moved. **The update starts no scan** (rule
+3): follow it with `codebuild start-build`, which is its own approval point.
+
+## Re-running after accounts are added
+
+Updating the stack does **not** start a scan — see "Updating the stack" above and `SKILL.md`
+global rule 3. After adding accounts:
+
+1. Confirm the StackSet reached them with `list-stack-instances`. Service-managed StackSets
+   with auto-deployment enabled cover new organization members automatically.
+2. Trigger the scan yourself:
+
+   ```bash
+   aws codebuild start-build --profile <scanning_profile> --project-name ProwlerCodeBuild
+   ```
+
+Treat that as its own approval point — it costs the same as a scan started by a create.
+
+Note that findings accumulate; see `references/reviewing-results.md` before reporting
+numbers from more than one run.
+
+## Cleanup
+
+Delete in reverse order, and state plainly what is retained. Every command here is a write
+under rule 1 — the four below and the three organization-level ones further down — so obtain
+approval for each before running it:
+
+```bash
+aws cloudformation delete-stack --profile <scanning_profile> --stack-name SATv2
+aws cloudformation delete-stack --profile <management_profile> \
+  --stack-name SATv2-ProwlerMemberRole-Management
+aws cloudformation delete-stack-instances --profile <management_profile> \
+  --stack-set-name <stack_set_name> --deployment-targets OrganizationalUnitIds=<root_or_ou_id> \
+  --regions <region> --no-retain-stacks
+aws cloudformation delete-stack-set --profile <management_profile> \
+  --stack-set-name <stack_set_name>
+```
+
+If a delegation policy was added solely for this, trim it — with approval, since it is an
+organization-level write on a replace-not-append API. Read the current document first, remove
+only the `SATv2ListAccounts` statement, write the trimmed document back, and re-read to confirm
+every other statement survived. Use `delete-resource-policy` only when that statement was the
+whole policy. Like the forward path in `references/prerequisites.md`, this has not been
+exercised live by this skill's authors.
+
+```bash
+aws organizations describe-resource-policy --profile <management_profile> \
+  --query 'ResourcePolicy.Content' --output text > current-policy.json
+python3 -c 'import json;d=json.load(open("current-policy.json"));d["Statement"]=[s for s in d["Statement"] if s.get("Sid")!="SATv2ListAccounts"];json.dump(d,open("trimmed-policy.json","w"));print(len(d["Statement"]),"statement(s) remain")'
+# one or more statements remain — write the trimmed document back:
+aws organizations put-resource-policy --profile <management_profile> \
+  --content file://trimmed-policy.json
+# zero remain — the policy was ours alone:
+aws organizations delete-resource-policy --profile <management_profile>
+aws organizations describe-resource-policy --profile <management_profile> \
+  --query 'ResourcePolicy.Content' --output text
+```
+
+If **trusted access** was activated solely for this, it can be reversed — but only
+deliberately. It is an organization-wide setting, unrelated service-managed StackSets depend
+on it, and it may well have predated SATv2. Leave it alone unless you activated it. When you
+do reverse it — with approval, since both calls are organization-wide — deregister any
+StackSets delegated administrators first or the call fails:
+
+```bash
+aws organizations deregister-delegated-administrator --profile <management_profile> \
+  --service-principal member.org.stacksets.cloudformation.amazonaws.com \
+  --account-id <scanning_account_id>
+aws cloudformation deactivate-organizations-access --profile <management_profile>
+```
+
+Out of order, the second call returns
+`InvalidOperationException: You have delegated administrator/s for this service. De-register
+them in order to disable service access.` Deactivation also removes
+`member.org.stacksets.cloudformation.amazonaws.com` from
+`list-aws-service-access-for-organization`, mirroring what activation added.
+
+**The findings bucket is `DeletionPolicy: Retain` and is versioned.** It survives stack
+deletion and continues to bill. Tell the user its name and that deleting it is a separate,
+deliberate action. Do not delete it without explicit instruction.
+
+Two consequences worth stating when you report the bucket:
+
+- Because versioning is enabled, emptying it requires removing **every object version and
+  delete marker**. `aws s3 rb --force` leaves non-current versions behind and the bucket
+  keeps billing.
+- The bucket also carries `UpdateReplacePolicy: Retain`, so an update that *replaces* the
+  bucket strands the old one the same way a deletion does.
