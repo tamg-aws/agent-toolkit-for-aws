@@ -80,6 +80,11 @@ exact membership — they travel with the pinned Prowler version.
 per-account duration by account count divided by `ConcurrentAccountScans` and compare
 against the timeout.
 
+One measured anchor for that formula: a `Full` scan on the pinned Prowler took roughly
+**35 minutes per account** — but that was on very small accounts (937 to 15,466 findings
+each), n=1. Treat it as a floor rather than an estimate. Accounts with more resources take
+proportionally longer, so scale from your own account sizes instead of reusing the number.
+
 If an existing stack was deployed against an older template, it may hold a
 `ProwlerScanType` value the current template no longer offers. Pass `ProwlerScanType`
 explicitly on any update rather than reusing the previous value.
@@ -205,7 +210,10 @@ aws codebuild batch-get-builds --profile <scanning_profile> --ids "$BUILD_ID" \
   --query 'builds[0].[buildStatus,currentPhase]' --output text
 ```
 
-Expect minutes for a few accounts and hours for an organization-wide `Full` scan.
+Runtime is tier-dependent, so read this against the tier you chose. Expect minutes for a few
+accounts at `Basic` or `Intermediate`. At `Full`, four small accounts measured 52 minutes wall
+clock with `ConcurrentAccountScans=Six` (a single wave), and an organization-wide `Full` scan
+runs to hours.
 
 Confirm which accounts were actually reached — see `references/troubleshooting.md`. The
 build status alone does not tell you: per-account failures are recorded inside a
@@ -227,6 +235,11 @@ alternative to that setting — on its own it is inert. The list is **space**-de
 Use the override to pilot against two or three accounts before scanning the organization,
 or when the scanning account cannot enumerate the organization. With it empty, discovery
 uses `organizations list-accounts` filtered to `Status==ACTIVE`.
+
+**Clear it once the pilot passes.** An override left in place silently caps every later scan at
+the accounts it names, and nothing in the build status or the output says so — see
+`references/troubleshooting.md`. Clearing it takes a stack update **and** a fresh
+`start-build`, because the update alone starts no scan.
 
 ## Re-running after accounts are added
 

@@ -77,9 +77,33 @@ succeeds only from the management account or from a **registered delegated admin
 accounts are scanned, set `MultiAccountListOverride` **in addition** — on its own it is
 inert, because the buildspec reads it only inside the `MultiAccountScan='true'` branch.
 
-This is the failure most likely to go unnoticed, because it produces a complete, plausible
-result set. Always confirm the scanned-account count against expectation using the coverage
-check above.
+This and the stale-override case below are the two failures most likely to go unnoticed,
+because both produce a complete, plausible result set. Always confirm the scanned-account count
+against expectation using the coverage check above.
+
+## The scan covered some accounts but not all
+
+**Cause.** A non-empty `MultiAccountListOverride` left behind by an earlier pilot or a scoped
+re-run. `MultiAccountScan` is `'true'`, so the scan presents as organization-wide and the build
+reports `SUCCEEDED`, but the buildspec reads the override and scans only the accounts it names.
+
+This is harder to spot than the single-account case above. The output is complete and plausible
+for the accounts it does cover, and the skipped accounts are simply absent rather than flagged
+anywhere. The management account is the most common casualty, because it is also the account a
+service-managed StackSet never reaches — so it can be missing its role *and* missing from the
+override, with neither surfacing as an error.
+
+**Fix.** Read the override before trusting any coverage claim:
+
+```bash
+aws cloudformation describe-stacks --profile <scanning_profile> --stack-name SATv2 \
+  --query 'Stacks[0].Parameters[?ParameterKey==`MultiAccountListOverride`].ParameterValue' \
+  --output text
+```
+
+Empty output means discovery enumerates the organization. A list of account IDs means the scan
+is capped at exactly those. Clear it with a stack update, then start a build — the update alone
+starts no scan.
 
 ## Parameter validation error on the member-role template
 

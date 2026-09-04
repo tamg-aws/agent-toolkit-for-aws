@@ -22,9 +22,9 @@ Only the formats Prowler actually emitted appear. Do not treat a missing prefix 
 | `ocsf-json/` | OCSF-formatted JSON | Always |
 | `html/` | Prowler's own HTML report | Always |
 | `reports/` | The automatic full export, its `.metadata` sidecar, and `satv2-dashboard.html` | When `Reporting='true'` |
-| `compliance/` | Compliance-framework CSVs | Conditional — absent in observed `Intermediate` and `Basic` runs |
+| `compliance/` | Compliance-framework CSVs | Tier-dependent — present in an observed `Full` run (SOC2, CIS and other framework CSVs); absent in observed `Intermediate` and `Basic` runs |
 | `json/` | Native Prowler JSON | Conditional |
-| `asff-json/` | ASFF-formatted JSON | Conditional |
+| `asff-json/` | ASFF-formatted JSON | Not produced under the default `ProwlerOptions` — absent in observed `Basic`, `Intermediate` **and** `Full` runs |
 | `athena_results/` | Athena query output | Only for queries that use the workgroup's own output location; the automatic export overrides it to `reports/` |
 
 The `csv/` files use `;` as the delimiter, not `,` — the Glue SerDe is `OpenCSVSerde` with
@@ -166,7 +166,20 @@ The `asff-json/` prefix is the format Security Hub ingests, so SATv2 output can 
 into Security Hub CSPM. Importing is a mutating action on another service and is outside this
 skill — surface the option and let the user decide.
 
-**Check the prefix exists first.** It was absent in observed `Intermediate` and `Basic` runs,
-so do not offer the Security Hub route until `aws s3 ls s3://<bucket>/asff-json/` returns
-objects. Note also that `ProwlerMemberRole` already carries `securityhub:BatchImportFindings`
-in every assessed account, whether or not the user intends to use it.
+**It is not produced by default.** The prefix was empty after observed `Basic`, `Intermediate`
+**and** `Full` runs, so on a default deployment this route is simply unavailable. Do not offer
+it until `aws s3 ls s3://<bucket>/asff-json/` returns objects.
+
+The cause is Prowler's output-format selection, not SATv2 discarding the files. The buildspec
+does copy `*.asff.json` into `asff-json/`, and `ProwlerOptions` is passed verbatim to the
+`prowler` invocation — but the default `aws --ignore-exit-code-3` carries no output-format
+flag, so Prowler emits only its default set. That is also why `csv/`, `ocsf-json/` and `html/`
+are the three `Always` prefixes above.
+
+Enabling ASFF therefore means adding an output-format flag to `ProwlerOptions`. **This is
+untested — verify the flag against the pinned Prowler version before promising it.** Note also
+that it is a scan parameter, so it requires a stack update *and* a fresh `start-build`; the
+update alone starts no scan.
+
+Note also that `ProwlerMemberRole` already carries `securityhub:BatchImportFindings` in every
+assessed account, whether or not the user intends to use it.
