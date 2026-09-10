@@ -1,8 +1,8 @@
 ---
 name: aws-security
-description: "Covers AWS security services and workflows — Security Hub V2 (OCSF) findings, connectors, aggregators, automation rules, and security posture summaries; Security Hub CSPM (V1/ASFF) controls and compliance standards; GuardDuty threat findings; Inspector vulnerability findings; Macie sensitive data findings; Detective investigation; and Security Lake configuration and data aggregation. Applicable when questions involve security posture, Exposure findings, CSPM failed controls, threat findings, vulnerability findings, sensitive data findings, automation rules, or cross-service security configuration across AWS environments. Procedures use standard AWS CLI syntax and work with or without the AWS MCP server."
+description: "Covers AWS security services and workflows — Security Hub V2 (OCSF) findings, connectors, aggregators, automation rules, and security posture summaries; Security Hub CSPM (V1/ASFF) controls and compliance standards; GuardDuty threat findings; Inspector vulnerability findings; Macie sensitive data findings; Detective investigation; and Security Lake configuration and data aggregation. Applicable when questions involve security posture, Exposure findings, CSPM failed controls, threat findings, vulnerability findings, sensitive data findings, automation rules, or cross-service security configuration across AWS environments. Also covers explicit service-selection, prioritized workload-coverage recommendations, and security cost advice. Ordinary configuration checks and posture summaries remain factual. Procedures use standard AWS CLI syntax and work with or without the AWS MCP server."
 metadata:
-  version: "1"
+  version: "2"
 ---
 
 # AWS Security
@@ -17,9 +17,9 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 ## Global rules
 
-1. **Read-only APIs only.** This skill and all its references use exclusively non-mutating APIs. NEVER reference, recommend, or invoke any API that creates, modifies, deletes, enables, disables, or otherwise mutates resource state or configuration — not even in prose recommendations. See service reference files for the complete allowed API list.
+1. **Read-only APIs only.** This skill and all its references use exclusively non-mutating APIs. Never invoke mutating operations or provide write-API commands. Only the selected `service-recommendations` workflow may advise configuration changes in prose, with a separate implementation handoff for accepted recommendations. All other procedures report factual state. See the selected reference files for read-only API scope.
 
-2. **No severity judgements on configuration state.** Present what is and is not configured factually. Do not assign severity labels, gap assessments, or editorial framing (e.g., "critical gap", "security issue") to configuration state.
+2. **Scoped recommendation priorities.** Present configuration state factually outside the selected `service-recommendations` workflow; do not assign configuration severity, gap assessments, or editorial framing there. Only that workflow may assess coverage gaps and assign recommendation priorities from verified evidence. These priorities are workflow-authored, not observed findings severity or guide-assigned ratings. Preserve service-reported findings severity and the findings ordering below in every workflow.
 
 3. **No false-positive suppression recommendations.** Focus on helping customers understand findings. Do not recommend suppression filters, archival rules, or finding dismissal.
 
@@ -37,18 +37,21 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 ## How this skill works
 
-1. **Find the sub-skill** — Match the user's request against the sub-skill registry below. Match on meaning, not exact wording. If ambiguous, ask: "Are you checking configuration, or do you need a findings summary?"
+1. **Find the sub-skill** — Match the user's request against the sub-skill registry below. Match on meaning, not exact wording. Explicit requests for service selection, coverage improvements, priorities, or cost advice select `service-recommendations`, including single-service advice. Factual checks and findings select their existing procedures. If ambiguous, ask: "Do you want a factual configuration check, a findings summary, or service recommendations?"
 
 2. **If a sub-skill matches** — read `references/{sub-skill-id}.md` and follow its procedure.
 
 3. **If no sub-skill matches** — answer from the service reference files listed below. Load `references/services-overview.md` for cross-service context, or the relevant service reference file (e.g., `references/guardduty.md`) for API scope and severity scoring questions.
 
-4. **Cross-service overview** — When the user asks about overall security posture across multiple services, start with `references/services-overview.md`, then route to relevant sub-skills.
+4. **Cross-service routing** — For ordinary overall posture summaries, start with `references/services-overview.md`, then the relevant factual configuration/findings procedures. For explicit service selection, prioritized coverage advice, or security cost review, start with `references/service-recommendations.md`; load the overview only for supporting context. Broad org coverage audits may use its organization review, but never imply permission for detailed account enumeration.
+
+**Reference loading:** When installed locally, resolve registry paths from this aws-security directory and Markdown links relative to their containing file. When loaded through MCP, retrieve skill `aws-security` through `retrieve_skill` with `file="references/service-recommendations.md"`, or the corresponding registry path. Nested support files use `file="references/service-recommendations/inventory-commands.md"` (and the other support filenames). All MCP `file` paths are relative to the aws-security root; do not read MCP-only files from the local filesystem.
 
 ## Sub-skill registry
 
 | ID | Name | Trigger Phrases | When to Route Here | Reference |
 |----|------|-----------------|-------------------|-----------|
+| `service-recommendations` | Security Service Recommendations | "which services should I enable", "recommend protection plans", "prioritize coverage gaps", "audit org-wide coverage", "reduce security spend" | Explicit service-selection, single-service coverage advice, organization coverage review, or cost advice | `references/service-recommendations.md` |
 | `guardduty-configuration` | GuardDuty Config Review | "is GuardDuty configured", "check detector", "GuardDuty features enabled", "runtime monitoring setup" | User wants to verify GuardDuty deployment completeness | `references/guardduty-configuration.md` |
 | `guardduty-findings` | GuardDuty Findings Summary | "summarize GuardDuty findings", "what threats", "GuardDuty severity breakdown", "attack sequences" | User wants a findings posture snapshot | `references/guardduty-findings.md` |
 | `inspector-configuration` | Inspector Config Review | "is Inspector scanning", "Inspector enabled", "scan types", "coverage gaps" | User wants to verify Inspector deployment | `references/inspector-configuration.md` |
@@ -69,6 +72,7 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 | Keywords | Route to |
 |----------|----------|
+| "recommend", "should I enable", "coverage improvements", "prioritize gaps", "security spend", "cost review" | Service Recommendations, including when a single service is named; this intent takes precedence over service keywords below. Factual checks and ordinary posture summaries keep their existing routes. |
 | "automation rules" (ambiguous) | Both Security Hub and Security Hub CSPM have automation rules. If customer uses Security Hub V2 (OCSF), route to Security Hub config. If customer uses Security Hub CSPM (ASFF), route to CSPM config. Ask if unclear. |
 | "standards", "controls", "compliance", "FSBP", "CIS", "PCI", "NIST", "ASFF" | Security Hub CSPM skills |
 | "integrations", "risk score", "attack path", "OCSF", "exposure", "connectors" | Security Hub skills |
@@ -87,7 +91,7 @@ Load service reference files on demand — only when the current turn requires c
 
 | Reference | Content | When to Load |
 |-------|---------|-------------|
-| `references/services-overview.md` | Cross-service relationships, data formats, membership models, admin discovery, API conventions | Cross-service questions, general security posture, "which services should I enable" |
+| `references/services-overview.md` | Cross-service relationships, data formats, membership models, admin discovery, API conventions | Factual cross-service questions and general posture; supporting context after recommendation routing |
 | `references/guardduty.md` | GuardDuty APIs, severity scoring, service notes | GuardDuty-specific questions about APIs or severity |
 | `references/inspector.md` | Inspector APIs, severity scoring, service notes | Inspector-specific questions about APIs or severity |
 | `references/security-hub.md` | Security Hub V2 (OCSF) APIs, severity scoring, service notes | Security Hub V2-specific questions about APIs or severity |
