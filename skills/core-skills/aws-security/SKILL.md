@@ -17,7 +17,7 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 ## Global rules
 
-1. **Read-only APIs only.** This skill and all its references use exclusively non-mutating APIs. Never invoke mutating operations or provide write-API commands. Only the selected `service-recommendations` workflow may advise configuration changes in prose, with a separate implementation handoff for accepted recommendations. All other procedures report factual state. See the selected reference files for read-only API scope.
+1. **Read-only APIs only.** This skill and all its references use exclusively non-mutating APIs. Never invoke mutating operations or provide write-API commands. Only the selected `service-recommendations` workflow may advise configuration and lifecycle changes in prose, with a separate implementation handoff for accepted recommendations. Its full-guide domains cover suitability, scoped evidence and specialist decisions, never rule/code authoring or scan, analysis, query or export initiation. All other procedures report factual state. See the selected reference files for read-only API scope.
 
 2. **Scoped recommendation priorities.** Present configuration state factually outside the selected `service-recommendations` workflow; do not assign configuration severity, gap assessments, or editorial framing there. Only that workflow may assess coverage gaps and assign recommendation priorities from verified evidence. These priorities are workflow-authored, not observed findings severity or guide-assigned ratings. Preserve service-reported findings severity and the findings ordering below in every workflow.
 
@@ -27,7 +27,7 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 5. **Prioritize Exposure findings in Security Hub.** Exposure findings (attack paths, resource exposure) represent Security Hub's unique cross-service correlation. Surface these first in any findings summary.
 
-6. **Expensive operations require explicit request.** MUST NOT paginate through all member accounts by default. Per-account enumeration only executes if the user explicitly requests detailed account-level information. Use statistics/count APIs where available (e.g., `get-coverage-statistics`).
+6. **Expensive operations require explicit request.** MUST NOT paginate through all member accounts by default. Per-account enumeration only executes if the user explicitly requests detailed account-level information. Use statistics/count APIs only where their verified filters constrain the authorized account/resource scope; an unfiltered delegated-admin aggregate is not local-account evidence.
 
 7. **Match the user's language.** Respond in the same language the user writes in.
 
@@ -37,7 +37,7 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 ## How this skill works
 
-1. **Find the sub-skill** — Match the user's request against the sub-skill registry below. Match on meaning, not exact wording. Explicit requests for service selection, coverage improvements, priorities, or cost advice select `service-recommendations`, including single-service advice. Factual checks and findings select their existing procedures. If ambiguous, ask: "Do you want a factual configuration check, a findings summary, or service recommendations?"
+1. **Find the sub-skill** — Match the user's request against the sub-skill registry below. Match on meaning, not exact wording. Explicit requests for service selection, coverage improvements, priorities, or cost advice select `service-recommendations`, including single-service, security lifecycle, network/TLS and public/private AppSec advice. Factual checks and findings select their existing procedures. If ambiguous, ask: "Do you want a factual configuration check, a findings summary, or service recommendations?"
 
 2. **If a sub-skill matches** — read `references/{sub-skill-id}.md` and follow its procedure.
 
@@ -45,7 +45,7 @@ See `references/services-overview.md` for service relationships, data formats, a
 
 4. **Cross-service routing** — For ordinary overall posture summaries, start with `references/services-overview.md`, then the relevant factual configuration/findings procedures. For explicit service selection, prioritized coverage advice, or security cost review, start with `references/service-recommendations.md`; load the overview only for supporting context. Broad org coverage audits may use its organization review, but never imply permission for detailed account enumeration.
 
-**Reference loading:** When installed locally, resolve registry paths from this aws-security directory and Markdown links relative to their containing file. When loaded through MCP, retrieve skill `aws-security` through `retrieve_skill` with `file="references/service-recommendations.md"`, or the corresponding registry path. Nested support files use `file="references/service-recommendations/inventory-commands.md"` (and the other support filenames). All MCP `file` paths are relative to the aws-security root; do not read MCP-only files from the local filesystem.
+**Reference loading:** When installed locally, resolve registry paths from this aws-security directory and Markdown links relative to their containing file. When loaded through MCP, retrieve skill `aws-security` through `retrieve_skill` with `file="references/service-recommendations.md"`, or the corresponding registry path. Nested support files use `file="references/service-recommendations/inventory-commands.md"` (and the other support filenames). Recommendation domain routing is `file="references/service-recommendations/domain-routing.md"`; select its linked domain file, such as `file="references/service-recommendations/network-firewall.md"`. Local links and MCP file paths address the same aws-security tree. All MCP `file` paths are relative to the aws-security root; do not read MCP-only files from the local filesystem.
 
 ## Sub-skill registry
 

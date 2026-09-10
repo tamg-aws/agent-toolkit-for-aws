@@ -76,3 +76,12 @@ Member accounts cannot read `describe-organization-configuration` for these serv
 pass 2's org checks from the delegated administrator account, or the management account to
 identify who the delegated admins are. From a member account, report the scope limitation
 explicitly rather than presenting single-account results as organization-wide.
+
+## Domain evidence and scoped coverage
+
+The domain references add focused customer-evidence paths, not blanket new permissions.
+Existing `inspector2:ListCoverage` and `guardduty:ListCoverage` authorize reads whose API
+requests must still use the account predicates in [enablement checks](enablement-checks.md).
+An allowed IAM result or delegated-admin role does not widen the approved collection scope.
+Verify exact new action/resource permissions separately before any future read is added;
+manual configuration excerpts do not justify granting provisioning or scan permissions.

@@ -20,7 +20,7 @@ Execute commands using the AWS MCP server when connected (sandboxed execution, a
 logging, observability). Fall back to AWS CLI or shell otherwise.
 
 For MCP-loaded content, retrieve skill `aws-security` through `retrieve_skill` with
-`file="references/service-recommendations/<support-file>.md"` for the four support files
+`file="references/service-recommendations/<support-file>.md"` for the support files
 linked below. Use `file="SKILL.md"` for the parent. For local content, resolve Markdown
 links relative to this file. Write requested reports in the user workspace subject to
 the disclosure rules below.
@@ -38,6 +38,14 @@ operation-specific least-privilege handoff.
 
 ## Common Tasks
 
+### Domain selection
+
+After selecting recommendation mode, load
+[domain routing](service-recommendations/domain-routing.md) before discovery. Use its
+requirement predicates to select lifecycle topics and focused evidence; the inventory
+matrix alone is not full-guide coverage. Load only the relevant domain references,
+including existing-service tuning and public/private AppSec when requested.
+
 ### 0. Verify Dependencies
 
 Select the workflow below before discovery; establish only its relevant scope.
@@ -45,7 +53,10 @@ Select the workflow below before discovery; establish only its relevant scope.
 **Constraints:**
 
 - You MUST confirm identity with `aws sts get-caller-identity` before running any check; report a masked account scope unless the user explicitly requests
-  identifiers. Establish region separately from the user or explicit command scope
+  identifiers. Establish region separately from the user or explicit command scope. When the user
+  specifies a profile, propagate `--profile <selected-profile>` to every CLI call, including
+  identity and global-service reads; configure the equivalent session for MCP execution.
+  Never silently fall back to default credentials
 - You MUST establish whether this is an AWS Organizations member, the management account,
   or a standalone account (`aws organizations describe-organization` with the projection
   in the inventory reference) — recommendations differ substantially, and an `AWSOrganizationsNotInUseException` means
@@ -86,7 +97,10 @@ permissions each pass requires.
 
 ### 2. Workflow A — Full Assessment
 
-Run pass 1, then pass 2, then produce the pass 3 report.
+Select applicable domains and confirm requirements first; run the relevant pass 1 and
+pass 2 reads, then produce the pass 3 report. Cover the selected lifecycle topic decisions
+and handoffs as well as service enablement. The source index is provenance, not a reason
+to read every account or all domains.
 
 **Pass 1 — Inventory.** See
 [service-recommendations/inventory-commands.md](service-recommendations/inventory-commands.md) for the commands.
@@ -179,7 +193,9 @@ handoff; it does not execute as part of this read-only workflow.
 
 Run only the relevant section of
 [service-recommendations/enablement-checks.md](service-recommendations/enablement-checks.md), plus the pass 1
-commands for the resource types that service covers.
+commands for the resource types that service covers. Load its selected domain reference
+from [domain routing](service-recommendations/domain-routing.md) for lifecycle, suitability
+and focused manual-evidence questions beyond enablement.
 
 **Constraints:**
 
@@ -306,17 +322,16 @@ handles scoping and this check does not apply.
 
 ## Provenance
 
-Service recommendations, tuning guidance, and cost levers come from the AWS Security
-Services Best Practices guide, aligned against its `main` branch at commit `f2b28d7`
-(2026-09-03) on 2026-09-09. The guide had 13 top-level pages at that commit. This skill
-draws on 12 of them: guardduty, security-hub, security-hub-cspm, inspector, macie,
-detective, security-lake, certificate-services, dns-firewall, network-firewall,
-firewall-overview (which supplies the Shield Advanced and Firewall Manager conditions), and
-waf (for WAF placement conditions only; rule authoring and the guide's 14 WAF sub-pages are
-implemented by the `waf` skill). The thirteenth, security-agent, covers AWS Security Agent
-on-demand penetration testing, which is scoped per application and has no account-level
-enablement state; this skill surfaces it as an advisory row only. The guide changes often:
-re-check its commit history against the commit above before trusting these citations.
+Recommendation provenance is the 44 English navigation pages at guide commit
+`f2b28d7c31c490ad676273307cbdb900c16daed8`. The
+[source index](service-recommendations/source-index.md) maps 133 substantive topic groups
+to domain trigger/evidence/decision/handoff contracts, including all WAF and Network
+Firewall subpages and public/private Security Agent lifecycle guidance. Repeated headings,
+navigation, examples and incomplete source sections are distinguished from substantive
+recommendations. Full coverage is advisory; source implementation recipes and prohibited
+suppression/severity-changing advice are not adopted. Use the
+[domain contract](service-recommendations/domain-routing.md) for current-document checks,
+preview qualifications and known NAT/TLS/WAF source conflicts.
 
 Two services in this skill are **not** covered by that guide as services: **IAM Access
 Analyzer** and **AWS Config**. Access Analyzer is included as a no-additional-cost posture
@@ -337,6 +352,7 @@ recommendation to the guide and the priority to this skill rather than implying 
 assigned it. These labels never replace observed findings severity or the parent
 AttackSequence/Exposure-first findings ordering.
 
-Network Firewall coverage is presence, logging, and policy-level settings: rule order,
-default actions, stream exception policy, stateless default action, and log destinations.
-Rule authoring, `$HOME_NET` scoping, and TLS inspection are out of scope.
+Network Firewall coverage includes deployment, rule semantics and address-variable
+applicability, TLS suitability/trust, logging and operational decisions in its domain
+reference. Rule authoring/execution, code, flow capture/flush and analysis initiation
+remain outside this read-only assessment; handoffs carry specific evidence and decisions.

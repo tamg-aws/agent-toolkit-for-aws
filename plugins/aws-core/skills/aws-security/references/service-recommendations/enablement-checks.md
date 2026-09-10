@@ -58,7 +58,9 @@ recommends letting GuardDuty manage agents so new resources are covered automati
 # Runtime Monitoring agent coverage — enabled but uncovered is a silent gap.
 # Returns null Resources when RUNTIME_MONITORING is DISABLED; that is expected,
 # not an error. Check the feature status first and skip this call if disabled.
-aws guardduty list-coverage --detector-id <id> --region <region>
+aws guardduty list-coverage --detector-id <id> --region <region> \
+  --filter-criteria '{"FilterCriterion":[{"CriterionKey":"ACCOUNT_ID","FilterCondition":{"Equals":["<caller-account-id>"]}}]}' \
+  --query 'Resources[].{Account:AccountId,Resource:ResourceId,Type:ResourceDetails.ResourceType,Status:CoverageStatus,Issue:Issue}'
 
 # S3 Malware Protection plans — enabled per bucket, not per detector. Malware Protection
 # for AWS Backup has no read API; confirm it in the console.
@@ -197,10 +199,15 @@ aws acm-pca list-certificate-authorities \
   --query 'CertificateAuthorities[].{Arn:Arn,Type:Type,Status:Status}' --region <region>
 ```
 
-**Pass conditions:** an enabled EventBridge rule whose pattern matches source `aws.acm`
-and detail-type "ACM Certificate Approaching Expiration" for the relevant certificates,
-with an SNS target. Rule/target existence proves configuration, not successful delivery;
-missing routing or delivery evidence remains UNKNOWN. Prefer DNS validation where applicable.
+**Pass conditions:** the chosen monitoring method demonstrates coverage of the relevant
+certificate estate, successful notification delivery and adequate renewal lead time
+([T005](certificates.md#t005)). Accept adequate CloudWatch expiry alarms or scheduled
+issuer-side checks; missing EventBridge/SNS routing alone is not a gap. Where an unmet
+need is demonstrated and ACM event applicability is verified, EventBridge expiry routing
+is an option: inspect the enabled rule's `aws.acm` source and "ACM Certificate Approaching
+Expiration" detail-type, relevant certificate scope and notification target. Rule/target
+existence proves configuration, not delivery. Missing monitoring or delivery evidence stays
+UNKNOWN, not absent protection. Prefer DNS validation where applicable.
 
 ACM-requested public and private certificates may qualify for managed renewal: inspect
 `RenewalEligibility`, available `RenewalSummary` status, and the issuance/management path.
@@ -220,10 +227,11 @@ the renewal period starts (~60 days before expiry), and failures there are silen
 
 ## AWS Network Firewall
 
-Presence, logging, and policy-level settings: rule order, default actions, stream exception
-policy, stateless default action, and log destinations. Rule authoring — Suricata syntax,
-`HOME_NET` scoping, TLS inspection — is deep enough to warrant its own skill and is out of
-scope here.
+These reads establish presence, logging and policy settings. Continue with the selected
+[Network Firewall domain topics](network-firewall.md) for deployment, HOME_NET/rule
+applicability, TLS/trust and lifecycle advice using focused evidence. Do not author or
+execute Suricata rules, mutation recipes, scans or analyses. Configuration alone does not
+prove symmetric routing, enforcement or client compatibility.
 
 ```bash
 aws network-firewall list-firewalls --region <region>
@@ -233,14 +241,20 @@ aws network-firewall describe-logging-configuration --firewall-name <name> --reg
 aws network-firewall describe-firewall-policy --firewall-policy-arn <arn> --region <region>
 ```
 
-**Pass conditions:** if deployed, a firewall endpoint exists in every AZ with workloads
-**within the inspection VPC** (in a centralized design the spokes need none); both ALERT and
-FLOW log types configured, to separate destinations; `RuleOrder` is `STRICT_ORDER` (Action
-Order is Suricata's default, so this is a common drift); every drop default action is paired
-with its alert variant, since an unpaired drop discards traffic with no log entry; the
-stateless default action forwards to the stateful rule groups; `StreamExceptionPolicy` is
-`REJECT`, with `CONTINUE` accepted only where an application cannot recover from a TCP RST
-and that exception is documented. Changing the stream exception policy restarts the firewall.
+**Assessment conditions:** first establish the actual deployment mode, intended traffic
+paths and compatible policy strategy ([T080–T082](network-firewall.md#t080),
+[T086](network-firewall.md#t086)). Assess endpoint/AZ coverage against that topology;
+do not apply an inspection-VPC rule universally to native TGW or multi-endpoint designs.
+Record observed rule order, stateless forwarding, default actions and logging destinations
+separately from evidence of effective blocking and log delivery. Evaluate strict order,
+application-aware versus custom defaults and required ALERT/FLOW visibility in that
+context; do not require every drop default to have a paired alert default. Unresolved
+topology, intent, compatibility or effectiveness remains UNKNOWN rather than a gap.
+
+Assess `StreamExceptionPolicy` against application recovery requirements and existing
+connection/idle-flow evidence ([T095](network-firewall.md#t095)). Recommend a change only
+for a demonstrated incompatibility, with owner-reviewed planned impact and validation;
+do not assert a universal firewall restart or change requirement.
 
 ## Route 53 Resolver DNS Firewall
 
@@ -288,6 +302,20 @@ aws fms list-policies --region us-east-1
 **Pass conditions:** an FMS administrator account exists if the org has 10 or more accounts
 with distributed firewall deployments; not required for a centralized design.
 
+## Account-scoped coverage interpretation
+
+For both coverage examples, substitute only the account established by caller identity,
+not an account discovered through admin visibility. For an explicitly approved multi-account
+set, run bounded per-account predicates and label each scope. Follow CLI auto-pagination;
+no max-items/no-paginate for completeness claims. Retain successful pages and mark a failed
+remainder UNKNOWN. Coverage rows are scan/coverage records, not unique workload counts.
+The projections retain identifiers for scoped reconciliation; mask them in reports.
+GuardDuty's resource type is nested under `ResourceDetails.ResourceType`. Inspector's
+account predicate is `filterCriteria.accountId` with `comparison: EQUALS`. A client-side
+projection/filter does not constrain collection. Do not use unfiltered GuardDuty coverage
+statistics from a delegated administrator as evidence about the caller account; if a
+verified scoped statistics request is unavailable, use the filtered list or mark UNKNOWN.
+
 ## Amazon Inspector
 
 ```bash
@@ -295,7 +323,9 @@ with distributed firewall deployments; not required for a centralized design.
 aws inspector2 batch-get-account-status --region <region>
 
 # Coverage — which resources are actually being scanned
-aws inspector2 list-coverage --region <region>
+aws inspector2 list-coverage --region <region> \
+  --filter-criteria '{"accountId":[{"comparison":"EQUALS","value":"<caller-account-id>"}]}' \
+  --query 'coveredResources[].{Account:accountId,Resource:resourceId,Type:resourceType,ScanType:scanType,Status:scanStatus}'
 
 # Organization posture
 aws inspector2 list-delegated-admin-accounts --region <region>
@@ -311,9 +341,10 @@ aws inspector2 list-members \
 `LAMBDA` and `LAMBDA_CODE` are separate toggles and the guide says both should be on —
 `LAMBDA` covers package vulnerabilities, `LAMBDA_CODE` covers custom application code.
 
-`CODE_REPOSITORY` is Inspector Code Security (repository SAST, SCA, and IaC scanning). It has
-no account-inventory trigger, so report its state without recommending it; the guide
-documents it as a capability to enable when repositories are connected.
+`CODE_REPOSITORY` is Inspector Code Security (repository SAST, SCA, and IaC scanning).
+A confirmed repository or CI/CD use case selects T030 in [vulnerability and data](vulnerability-data.md),
+with focused integration/language/gate evidence and an AppSec handoff. Account inventory
+alone neither triggers this recommendation nor establishes absence of repositories.
 
 ```bash
 # ECR rescan duration and EC2 scan mode.

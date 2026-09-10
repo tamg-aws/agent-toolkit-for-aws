@@ -129,19 +129,23 @@ organization-specific data such as employee IDs or internal classifications.
 | Internal ALB, no WebACL | n/a unless it indirectly handles unfiltered traffic from a network you do not control | n/a |
 | API Gateway REST API not behind CloudFront, no WebACL | AWS WAF — route to the `waf` skill | High |
 | Internet-facing NLB or non-HTTP ingress with an established traffic-inspection requirement | Evaluate Network Firewall for that requirement; presence alone is not a gap. Shield Advanced follows its own row | Medium |
-| Internet-facing web application with application logic (ALB, CloudFront, API Gateway) | Consider AWS Security Agent on-demand penetration testing; hand off to `pentesting-with-aws-security-agent` if installed, without starting it; advisory only, no enablement state, per-task-hour pricing, limited regions | Low |
+| Confirmed public or private application needing AppSec assessment | Use [application security](application-security.md) for scope, private connectivity, auth, data handling and lifecycle decisions; conditional specialist or AppSec-owner handoff, no test launch; verify current pricing and regions | Low |
 | VPC with no DNS Firewall rule group association | Route 53 Resolver DNS Firewall with AWS-managed lists — route to the `route53` skill | High |
 | DNS Firewall associated, no query logging | Enable Resolver query logging | Medium |
 | DNS Firewall associated, Advanced rules off | DNS Firewall Advanced for tunneling and DGA detection | Medium |
 | Any VPC | Security Lake default sources `VPC_FLOW` and `ROUTE53`; no flow-log or query-log prerequisite | Medium |
 | Revenue-generating internet-facing workload on CloudFront, ALB, EIP, Global Accelerator, or Route 53, where downtime cost exceeds the subscription | Shield Advanced, which includes AWS WAF and Firewall Manager at no additional cost — route to the `shieldadvanced` skill. CloudFront L3/L4 volumetric protection is already AWS's responsibility | Medium |
 | Egress traffic needing L3-L7 inspection | Network Firewall | Medium |
-| Network Firewall deployed, `RuleOrder` not `STRICT_ORDER` | Switch to strict order; Action Order is Suricata's default and a common drift | High |
-| Network Firewall deployed, drop default action without the paired alert action | Add the alert variant ("Application alert established"); without it dropped traffic is discarded with no log entry | High |
-| Network Firewall deployed, `StreamExceptionPolicy` not `REJECT` | Set `REJECT`, the guide's recommendation for most production traffic; `CONTINUE` only for applications that cannot recover from a TCP RST, documented as an exception; `DROP` silently breaks mid-stream flows. Changing it restarts the firewall, so schedule a window | High |
-| Network Firewall deployed, AZ **in the inspection VPC** without an endpoint | Add an endpoint per AZ with workloads; in a centralized (Transit Gateway) design only the inspection VPC needs per-AZ endpoints, spokes do not | High |
+| Network Firewall deployed, observed rule order conflicts with the verified intended policy strategy | Review strict-order suitability and rule dependencies with the firewall owner; establish the intended strategy before recommending a change (T086) | High (verified gap only) |
+| Network Firewall deployed, default actions do not meet demonstrated enforcement or logging requirements under the selected compatible strategy | Review application-aware versus custom defaults and observed verdict/log evidence; do not universally pair drop and alert defaults or infer enforcement from configuration (T086) | High (verified gap only) |
+| Network Firewall deployed, stream-exception behavior conflicts with application recovery requirements | Review the selected policy against application recovery, active connections and idle-flow evidence; assess planned change impact with the owner rather than assuming a universal restart (T095) | High (verified gap only) |
+| Network Firewall deployed, endpoint coverage does not meet the verified deployment mode and traffic-path requirements | Review topology-specific endpoint/AZ coverage for inspection-VPC, native TGW or multi-endpoint mode; recommend changes only for a demonstrated path requirement (T080–T082) | High (verified gap only) |
 | Network Firewall deployed, no logging configuration | Enable ALERT and FLOW logs, to separate destinations | Medium |
 | 10+ accounts with **distributed** WAF, DNS Firewall, or Network Firewall deployments (per account or per VPC) | Firewall Manager for policy rollout and enforcement; requires Organizations and AWS Config; per-policy-per-region cost, included with Shield Advanced. Limited value for a centralized single-firewall design | Medium |
+
+For the conditional Network Firewall rows, unresolved topology, intent or compatibility
+is an UNKNOWN evidence disposition, not a recommendation priority. Assign High only
+to a verified gap; unassessed or advisory-only decisions have no gap priority.
 
 Origin domain matching does not prove bypass protection. Verify distribution WebACL and
 origin restrictions with bounded/manual evidence without collecting secret header names or
@@ -150,36 +154,32 @@ that gap. Do not suppress an ALB/API finding just because CloudFront names it as
 Firewall existence likewise does not prove traffic routing or rule effectiveness; leave
 those UNKNOWN without evidence of the required traffic path.
 
-WAF, DNS Firewall, and Shield Advanced have dedicated skills in this repository with far
-more depth than this matrix. Recommend the service, then hand off — do not reproduce their
-configuration guidance here.
+Use [domain routing](domain-routing.md) for full lifecycle advisory coverage: WAF
+bots/fraud/tokens/operations, DNS filtering, SG/NACL/Shield Standard, segmentation/Lattice,
+and Network Firewall deployment, rule applicability, HOME_NET, TLS and operations.
+Collect focused scoped evidence and assess suitability before the precise specialist
+handoff. Existing WAF, route53 and Shield specialists are used only when available.
+Network Firewall has no assumed dedicated skill: name a separate firewall/network/PKI
+expert task with required inputs and expected decision. Do not stop at policy presence,
+but do not author rules/code, execute recipes or launch scans/analyses as assessment.
 
-Network Firewall has **no** dedicated skill in this repository. Report the presence, logging,
-and policy-level findings above (rule order, default actions, stream exception policy,
-stateless default action, log destinations), then stop: Suricata rule authoring, `HOME_NET`
-scoping, TLS inspection, and custom egress rules are out of scope for a posture assessment.
-Say so plainly rather than improvising rule guidance.
-
-Network Firewall cost levers from the guide, for the cost note: NAT gateway hourly and data
-processing charges are waived one-for-one when the NAT gateway sits in the same path as the
-firewall; gateway VPC endpoints for S3 and DynamoDB are free and keep that traffic out of
-firewall data processing; centralized inspection needs three endpoints where a distributed
-model needs thirty or more; audit unused endpoints quarterly, since each bills hourly whether
-or not it processes traffic; route each subnet to the endpoint in its own AZ to avoid cross-AZ
-charges.
+Network Firewall cost advice requires actual endpoint/NAT/TGW paths, payer and utilization
+plus current billing terms. Use T102–T103 in [Network Firewall](network-firewall.md);
+fixed deployment-size examples are not estimates for this customer. Compare endpoint
+traffic avoidance and centralized/distributed costs with resilience and visibility.
 
 ## Triggered by certificates
 
 | Trigger from pass 1 | Recommend | Priority |
 |---|---|---|
-| ACM certificate with verified event applicability and missing expiry routing | Enabled EventBridge expiry rule on "ACM Certificate Approaching Expiration" to SNS; verify delivery separately | High |
+| Certificate estate with demonstrated unmet monitoring coverage, delivery or lead-time needs after evaluating the chosen monitoring method | Close the verified monitoring gap; EventBridge expiry routing to SNS is an option only when event applicability and unmet needs justify it. Adequate CloudWatch alarms or issuer-side checks require no duplicate route; unknown monitoring stays UNKNOWN (T005) | High (verified gap only) |
 | Certificate with `Type: IMPORTED` | Renewal automation (the guide's pattern is an AWS Config rule plus Lambda); ACM does not renew imports. Verify expiration monitoring separately | High |
 | Certificate issued via Private CA `IssueCertificate` | Separate renewal and expiration monitoring; verify ACM representation and event applicability before proposing ACM event routing | High |
 | ACM-requested public/private certificate with renewal eligibility or state unresolved | Record renewal evidence as UNKNOWN; verify issuance path, `RenewalEligibility` and available renewal status; do not infer failure from `Type: PRIVATE` | n/a |
 | Email-validated certificate | Migrate to DNS validation for automatic renewal | Medium |
 | Certificate with `InUse: false` | Review and remove — unused certs count against quota | Low |
 | `DaysBeforeExpiry` at default 45 | Confirm 45 days suits the renewal process; range is 1-45 | Low |
-| Private CA present | Verify hierarchy is 2-3 levels, root isolated and not issuing end-entity certs | Medium |
+| Private CA present or PKI architecture requested | Use [T011](certificates.md#t011) to assess hierarchy against trust domains, assurance and issuing policy; justify depth rather than applying a universal numerical gate. Require concrete root-isolation and issuer-permission/chain evidence that the root does not issue end-entity certificates. Missing evidence stays UNKNOWN; a requirements review without a verified gap is ADVISORY. Metadata only, no key retrieval or issuance | Medium (verified gap only) |
 | Internal hostnames in a public certificate | Consider disabling Certificate Transparency logging | Low |
 
 ACM cannot be "enabled" — it is always available. These are monitoring gaps rather than
