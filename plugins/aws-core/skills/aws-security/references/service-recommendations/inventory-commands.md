@@ -219,4 +219,4 @@ only after complete relevant reads; distinguish UNKNOWN, NOT ASSESSED and NOT AP
 | AZs with workloads | | Network Firewall endpoint per AZ in the inspection VPC? |
 | Active accounts | | Firewall Manager trigger is 10+ with distributed firewalls |
 | ACM certificates | | renewal eligibility/path; monitoring evidence |
-| Private CAs | | hierarchy depth |
+| Private CAs | | trust domains, issuing relationships and root-isolation evidence |

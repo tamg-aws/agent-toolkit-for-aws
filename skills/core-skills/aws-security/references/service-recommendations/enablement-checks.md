@@ -33,8 +33,7 @@ aws guardduty get-detector --detector-id <id> --region <region>
 `Features[]` also includes the foundational sources `CLOUD_TRAIL`, `DNS_LOGS`, and
 `FLOW_LOGS`. These are always `ENABLED` on an active detector and are not protection plans;
 they cannot be toggled, so do not report them as gaps. VPC flow and DNS analysis are still
-metered per GB, which belongs in the cost note (see the cost table in
-`recommendation-matrix.md`).
+metered per GB; apply the parent workflow cost rules.
 
 Optional protection plans, which are the ones worth checking:
 
@@ -48,7 +47,7 @@ Optional protection plans, which are the ones worth checking:
 | `RUNTIME_MONITORING` | EC2, ECS, EKS runtime | EC2, ECS, or EKS on EC2 |
 | `EKS_RUNTIME_MONITORING` | EKS runtime (superseded by `RUNTIME_MONITORING`) | EKS on EC2 |
 | `AI_PROTECTION` | CloudTrail data events from Bedrock, Bedrock AgentCore, and SageMaker AI, plus management events | Bedrock, AgentCore, or SageMaker AI in use |
-| `AI_ANALYST` | GuardDuty Investigation (AI-powered finding analysis; preview, ten commercial regions) | Optional; any account in a supported region |
+| `AI_ANALYST` | GuardDuty Investigation (AI-powered finding analysis; preview; verify current region eligibility) | Optional; any account in a supported region |
 
 Runtime Monitoring has an `AdditionalConfiguration` array for agent management:
 `EC2_AGENT_MANAGEMENT`, `ECS_FARGATE_AGENT_MANAGEMENT`, `EKS_ADDON_MANAGEMENT`. The guide
@@ -122,9 +121,6 @@ more than one region is in use; central configuration policy in place for orgs; 
 customer-managed AWS Config recorder present **only if CSPM runs standalone** (see AWS
 Config below).
 
-**Cost note:** AWS Config is **not** included in the Security Hub 30-day trial, so
-standards-driven Config rule usage bills from day one.
-
 ## AWS Security Hub (unified)
 
 Distinct from CSPM. The older product was rebranded Security Hub CSPM; today's Security
@@ -150,11 +146,7 @@ each reads from Security Hub, because disabling ingestion without checking depen
 "breaks alerting quietly". Keep Macie publishing to CSPM: that is how sensitive-data traits
 reach Security Hub exposure scoring.
 
-**Plans:** Essentials (resource-based pricing) covers Inspector scanning, CSPM checks,
-GuardDuty EC2 Malware Scanning, and risk/exposure analytics. Threat Analytics (usage-based,
-optional) embeds GuardDuty detections in the console so a suspicious IAM action appears
-next to the misconfiguration that enabled it. The 30-day trial covers Essentials only —
-not Threat Analytics, Lambda code scanning, or Security Hub Extended.
+Verify current plans, pricing and inclusion using the parent cost-review rules.
 
 **Policies vs deployments:** Organizations policies exist for Security Hub and Inspector
 and auto-apply to new accounts, preventing drift. GuardDuty and CSPM use one-time
@@ -201,7 +193,7 @@ aws acm-pca list-certificate-authorities \
 
 **Pass conditions:** the chosen monitoring method demonstrates coverage of the relevant
 certificate estate, successful notification delivery and adequate renewal lead time
-([T005](certificates.md#t005)). Accept adequate CloudWatch expiry alarms or scheduled
+(see the [matrix](recommendation-matrix.md#triggered-by-certificates)). Accept adequate CloudWatch expiry alarms or scheduled
 issuer-side checks; missing EventBridge/SNS routing alone is not a gap. Where an unmet
 need is demonstrated and ACM event applicability is verified, EventBridge expiry routing
 is an option: inspect the enabled rule's `aws.acm` source and "ACM Certificate Approaching
@@ -228,8 +220,8 @@ the renewal period starts (~60 days before expiry), and failures there are silen
 ## AWS Network Firewall
 
 These reads establish presence, logging and policy settings. Continue with the selected
-[Network Firewall domain topics](network-firewall.md) for deployment, HOME_NET/rule
-applicability, TLS/trust and lifecycle advice using focused evidence. Do not author or
+[network suitability guidance](recommendation-matrix.md#focused-suitability-beyond-enablement) for deployment, HOME_NET/rule
+applicability, TLS/trust suitability using focused evidence. Do not author or
 execute Suricata rules, mutation recipes, scans or analyses. Configuration alone does not
 prove symmetric routing, enforcement or client compatibility.
 
@@ -242,8 +234,7 @@ aws network-firewall describe-firewall-policy --firewall-policy-arn <arn> --regi
 ```
 
 **Assessment conditions:** first establish the actual deployment mode, intended traffic
-paths and compatible policy strategy ([T080–T082](network-firewall.md#t080),
-[T086](network-firewall.md#t086)). Assess endpoint/AZ coverage against that topology;
+paths and compatible policy strategy (see the [matrix](recommendation-matrix.md#focused-suitability-beyond-enablement)). Assess endpoint/AZ coverage against that topology;
 do not apply an inspection-VPC rule universally to native TGW or multi-endpoint designs.
 Record observed rule order, stateless forwarding, default actions and logging destinations
 separately from evidence of effective blocking and log delivery. Evaluate strict order,
@@ -252,7 +243,7 @@ context; do not require every drop default to have a paired alert default. Unres
 topology, intent, compatibility or effectiveness remains UNKNOWN rather than a gap.
 
 Assess `StreamExceptionPolicy` against application recovery requirements and existing
-connection/idle-flow evidence ([T095](network-firewall.md#t095)). Recommend a change only
+connection/idle-flow evidence. Recommend a change only
 for a demonstrated incompatibility, with owner-reviewed planned impact and validation;
 do not assert a universal firewall restart or change requirement.
 
@@ -289,9 +280,8 @@ before it reaches Network Firewall, which reduces downstream processing cost.
 
 Relevant for distributed deployments: 10 or more accounts with per-account or per-VPC WAF,
 DNS Firewall, or Network Firewall that need policy rollout and enforcement as accounts and
-VPCs are added. Requires AWS Organizations and AWS Config. It adds a per-policy-per-region
-cost, is included with Shield Advanced, and adds limited value to a centralized
-single-firewall design.
+VPCs are added. Requires AWS Organizations and AWS Config; verify current pricing/bundling.
+It adds limited value to a centralized single-firewall design.
 
 ```bash
 # ResourceNotFoundException = no FMS administrator designated
@@ -342,7 +332,7 @@ aws inspector2 list-members \
 `LAMBDA` covers package vulnerabilities, `LAMBDA_CODE` covers custom application code.
 
 `CODE_REPOSITORY` is Inspector Code Security (repository SAST, SCA, and IaC scanning).
-A confirmed repository or CI/CD use case selects T030 in [vulnerability and data](vulnerability-data.md),
+A confirmed repository or CI/CD use case selects the [matrix guidance](recommendation-matrix.md#focused-suitability-beyond-enablement),
 with focused integration/language/gate evidence and an AppSec handoff. Account inventory
 alone neither triggers this recommendation nor establishes absence of repositories.
 
@@ -401,11 +391,6 @@ coverage stops at that ceiling. Buckets whose policy carries an explicit deny ne
 service-linked role allowed before they can be scanned; the resource coverage page lists
 them.
 
-**Cost note:** the guide recommends automated discovery over discovery jobs — it samples
-representatively, and the trial covers bucket inventory plus 150GB per account of
-automated discovery. Discovery jobs are excluded from the trial. Macie is billed separately
-and is not included in the Security Hub essentials plan.
-
 ## Amazon Detective
 
 ```bash
@@ -458,9 +443,8 @@ organization trail capturing read and write management events.
 used by the other five services.
 
 **Pass conditions:** data lake exists; all five default sources on; new-account
-collection enabled; if rollup regions are configured, lifecycle expiration set on
-contributing-region data (the guide cites 3 days as a cost/risk balance, 7 if more
-investigation time is wanted).
+collection enabled; if rollup regions are configured, contributing-region retention matches
+verified investigation and recovery needs.
 
 ## IAM Access Analyzer
 
