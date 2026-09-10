@@ -14,7 +14,8 @@ implementation and deeper lifecycle guidance belong in the linked guide and a se
    `--profile <selected-profile>` to **every** CLI call, including identity and global
    reads; configure the equivalent MCP session. Never fall back silently to default credentials.
 2. Select requirements from the [matrix](service-recommendations/recommendation-matrix.md)
-   before discovery. Ask about relevant planned workloads, private/public applications,
+   before discovery. Read only the directly linked domain section when its nuanced decision
+   is at issue, before resolving it; no all-domain loading. Ask about relevant planned workloads, private/public applications,
    repositories and existing protections that inventory cannot establish. Unconfirmed
    requirements are NOT ASSESSED; do not launch a broad scan to resolve ambiguous intent.
 3. Use only relevant [inventory](service-recommendations/inventory-commands.md) and
@@ -177,8 +178,9 @@ Recommendations draw on the [AWS Security Services Best Practices guide](https:/
 reviewed at commit `f2b28d7c31c490ad676273307cbdb900c16daed8`. The matrix links selected
 service and feature guidance; this skill does not reproduce the full guide or require a
 local lifecycle catalog. Pinned sources establish provenance, not current product guarantees.
-The matrix records known source conflicts; prioritize current developer guidance over lagging
-reference catalogs and disclose disagreement.
+The relevant domain section records its known source conflicts alongside the decision.
+Prioritize current developer guidance over lagging reference catalogs and disclose disagreement.
+These qualifications reuse reviewed material; they are not a fresh certification of all AWS claims.
 
 IAM Access Analyzer is supplemental, not a guide service. AWS Config is included for the
 CSPM standalone-recorder context. Priority rankings, resource triggers, the three-pass
