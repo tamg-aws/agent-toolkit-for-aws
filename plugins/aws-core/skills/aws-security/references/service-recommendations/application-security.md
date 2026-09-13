@@ -1,6 +1,6 @@
 # AWS Security Agent application suitability
 
-Use only for an application assessment decision under the [recommendation workflow](../service-recommendations.md).
+Use the parent skill’s focused-recommendation rules. Load the [full workflow](../service-recommendations.md) only for collection, broad review or cost reduction.
 Security Agent suitability is application-specific, not an account-wide enabled state.
 
 ## Application fit and scope

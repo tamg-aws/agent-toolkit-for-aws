@@ -7,6 +7,9 @@ implementation and deeper lifecycle guidance belong in the linked guide and a se
 
 ## Scope and evidence
 
+For conceptual or requirements-only advice, use the relevant domain with the parent's focused-recommendation rules; do not discover account state. The following collection
+steps apply only to an authorized account assessment.
+
 1. Confirm identity with `aws sts get-caller-identity`, the selected accounts and regions,
    and organization role using the projected organization read in
    [inventory commands](service-recommendations/inventory-commands.md).
@@ -89,7 +92,8 @@ region restrictions before proposing expansion; do not silently widen collection
 
 ### Cost review
 
-Every recommendation includes a cost/visibility note. Verify the applicable standalone or
+Every recommendation includes a cost/visibility note. If pricing or usage is unassessed,
+state cost UNKNOWN and the evidence needed; do not claim free or no incremental cost. Verify the applicable standalone or
 unified Security Hub pricing model, current trial eligibility, bundling and usage before
 claiming a cost lever. For example, Inspector ECR rescan duration is not a cost lever under
 Essentials. Use the current service usage/pricing information and Security Hub Cost Estimator;
@@ -124,13 +128,15 @@ operation-specific least-privilege implementation task.
 
 **`BadRequestException` / `InvalidInputException` on GuardDuty
 `describe-organization-configuration`** — Message reads "a delegated administrator account
-has not been enabled". This is a scope error, not a misconfiguration: you are in a member
-account. Note that GuardDuty raises `BadRequestException` here rather than `AccessDenied`,
-so an error-string match on "denied" will miss it.
+has not been enabled". Preserve that returned observation; the caller's organization
+configuration scope remains unresolved without independent evidence. Do not infer member,
+standalone or management-account role from the error alone. GuardDuty raises
+`BadRequestException` here rather than `AccessDenied`, so matching only "denied" misses it.
 
 **`BadRequestException` on GuardDuty `list-organization-admin-accounts`** — Message reads
-"you are not the admin account for your AWS Organization". Same cause. Report scope as
-single-account and list which checks were skipped.
+"you are not the admin account for your AWS Organization". Preserve the error and any
+verified account observations; mark organization coverage UNKNOWN and list skipped checks.
+Establish the caller's role separately rather than assuming a member or standalone account.
 
 **An account can be a delegated administrator and still fail these calls** — Delegated
 admin status is per service. `organizations list-delegated-administrators` returning the

@@ -1,6 +1,6 @@
 # Network protection selection
 
-Use the relevant section under the [recommendation workflow](../service-recommendations.md).
+Use the parent skill’s focused-recommendation rules. Load the [full workflow](../service-recommendations.md) only for collection, broad review or cost reduction.
 Start from required flows and trust boundaries, not a checklist of absent services.
 
 ## Flow boundaries and endpoints

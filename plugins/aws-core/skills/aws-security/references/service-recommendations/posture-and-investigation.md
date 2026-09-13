@@ -1,6 +1,6 @@
 # Posture, correlation and investigation decisions
 
-Use only the selected section under the [recommendation workflow](../service-recommendations.md).
+Use the parent skill’s focused-recommendation rules. Load the [full workflow](../service-recommendations.md) only for collection, broad review or cost reduction.
 Existing [enablement checks](enablement-checks.md) retain collection and scoped negative-state rules.
 
 ## Hub capability and producer coverage

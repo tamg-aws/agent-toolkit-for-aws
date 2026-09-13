@@ -29,6 +29,8 @@ Works from both standalone accounts and delegated administrator accounts.
    aws guardduty get-findings-statistics --detector-id <DETECTOR_ID> --groupBy SEVERITY --finding-criteria '{"Criterion":{"service.archived":{"Eq":["false"]}}}'
    ```
 
+   AttackSequence findings have documented Critical classification; preserve the actual reported severity and flag any discrepancy rather than rewriting it. See [GuardDuty severity](guardduty.md).
+
    **Severity mapping:** 9.0+ = Critical, 7.0–8.9 = High, 4.0–6.9 = Medium, 1.0–3.9 = Low
 
 3. List findings sorted by severity (most severe first):
@@ -113,6 +115,7 @@ Works from both standalone accounts and delegated administrator accounts.
 - MUST batch get-findings calls (max 50 IDs per request)
 - MUST NOT perform triage, investigation, or root cause analysis
 - MUST NOT make recommendations about suppression or remediation
+- MUST label detail-derived resource counts as occurrences or deduplicated resources, naming the deduplication scope. Samples do not establish fleet totals or absence.
 - SHOULD limit detail retrieval to top 200 findings for performance
 
 ## Troubleshooting

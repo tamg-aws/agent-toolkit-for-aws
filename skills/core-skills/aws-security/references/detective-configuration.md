@@ -46,7 +46,7 @@ Works from both standalone accounts and delegated administrator accounts.
    aws detective list-members --graph-arn <graph-arn>
    ```
 
-   Check each member status: ENABLED, VERIFICATION_FAILED, VERIFICATION_IN_PROGRESS.
+   Report observed member status, such as ENABLED, VERIFICATION_FAILED or VERIFICATION_IN_PROGRESS. The current [ListMembers contract](https://docs.aws.amazon.com/boto3/latest/reference/services/detective/client/list_members.html) defines ENABLED as currently contributing data to the graph. Report this as service-reported contribution; it does not establish completeness, freshness or coverage of every required source.
 
 4. Check pending invitations (from member perspective):
 
@@ -65,7 +65,7 @@ Works from both standalone accounts and delegated administrator accounts.
    | EKS Audit Logs | Enabled / Disabled / Not Configured |
    | Security Hub Findings | Enabled / Disabled / Not Configured |
    | Member Count | X members |
-   | Members Enabled | X/Y enabled |
+   | Member status | X/Y observed member records have ENABLED status; ingestion separate |
 
 ## Workflow B: Review Organization Coverage
 
@@ -101,8 +101,8 @@ Works from both standalone accounts and delegated administrator accounts.
    |---|---|
    | Delegated Admin Configured | Configured / Not Configured |
    | Auto-Enable New Accounts | Enabled / Not Enabled |
-   | Member Accounts | Enrolled (details on request) |
-   | Data Sources Enabled | X/Y packages |
+   | Member Accounts | Observed membership/status, or UNKNOWN; details only on request |
+   | Data Sources | Observed states across all returned packages; name the denominator and any documented subset |
 
 ## Constraints
 

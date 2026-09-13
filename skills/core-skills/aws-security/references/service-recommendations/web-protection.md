@@ -1,6 +1,6 @@
 # Web protection decisions
 
-Use only the selected section under the [recommendation workflow](../service-recommendations.md).
+Use the parent skill’s focused-recommendation rules. Load the [full workflow](../service-recommendations.md) only for collection, broad review or cost reduction.
 An existing WebACL can need tuning; an absent feature is not automatically an application gap.
 
 ## Endpoint coverage and bypass
@@ -14,7 +14,7 @@ CloudFront naming an origin is not bypass protection. Compare the distribution W
 origin access restrictions using bounded evidence without secret header names/values. Verified
 restrictions may make an additional origin ACL redundant; unchecked restrictions leave origin
 protection UNKNOWN. If direct bypass is demonstrated, report that gap rather than suppressing
-an ALB/API finding. Static/private cases retain the matrix's conditional triggers.
+an ALB/API finding. For static content without application logic, assess the actual abuse or availability need before recommending WAF; absence alone is not an application gap. For private applications, establish reachable paths, consumers and supported associations before recommending HTTP filtering.
 Source: [pinned WAF placement guidance](https://github.com/aws/aws-security-services-best-practices/blob/f2b28d7c31c490ad676273307cbdb900c16daed8/docs/en/guides/waf/recommended-http-architecture/docs/index.md).
 
 ## Rules and application abuse

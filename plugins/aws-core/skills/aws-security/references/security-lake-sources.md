@@ -90,7 +90,7 @@ Works from both standalone and delegated administrator accounts.
 
 6. MUST report total subscriber count and access type breakdown.
 
-7. MUST report exception count — zero exceptions is healthy.
+7. MUST report exception count. Zero reported exceptions does not establish successful delivery or complete ingestion; retain any missing-data and observation-scope limitations.
 
 8. SHOULD note subscribers in non-ACTIVE status.
 
@@ -106,8 +106,8 @@ Works from both standalone and delegated administrator accounts.
 
 | Symptom | Resolution |
 |---|---|
-| get-data-lake-sources returns empty | Security Lake not enabled or no sources configured |
-| AccessDeniedException | Caller is not Security Lake delegated admin or not enabled |
+| get-data-lake-sources returns empty | Report the empty result and queried scope; the cause and enablement state remain UNKNOWN |
+| AccessDeniedException | Report the denied read; the cause, caller's organization role and enablement state remain UNKNOWN |
 | UnauthorizedException | Same as above |
 | Subscriber DEACTIVATED | Note in summary — may have been disabled |
 | High exception count | Summarize by account/region — may indicate rollout issues |

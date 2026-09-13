@@ -53,7 +53,7 @@ Works from both standalone and delegated administrator accounts.
    aws securitylake list-subscribers
    ```
 
-   For each subscriber, note access type (S3, LAKEFORMATION) and status.
+   For each subscriber, report returned access type and configuration fields. Do not invent an active/healthy status; subscriber existence does not prove consumption or delivery.
 
 5. Present results:
 
@@ -66,7 +66,7 @@ Works from both standalone and delegated administrator accounts.
    | S3 Data Events | Configured / Not Configured | ... |
    | Lambda Execution | Configured / Not Configured | ... |
    | EKS Audit | Configured / Not Configured | ... |
-   | Subscribers | Configured | N subscribers active |
+   | Subscribers | N configurations observed | Delivery/consumption NOT ASSESSED unless evidenced |
 
 6. MUST check all standard AWS sources listed above.
 

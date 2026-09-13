@@ -77,11 +77,11 @@ Works from both standalone accounts and delegated administrator accounts.
 
    | Check | Status |
    |---|---|
-   | Detector enabled | Enabled / Not Enabled |
+   | Detector status | `get-detector.Status`; detector ID alone proves presence only |
    | Each feature from API response | Enabled / Disabled |
    | Runtime Monitoring agent management (per resource type) | Enabled / Disabled |
    | Malware Protection for S3 plans | Configured / Not Configured |
-   | Publishing destination | Configured / Not Configured |
+   | Publishing destination | Observed configuration/status; delivery NOT ASSESSED unless evidenced |
    | Trusted IP list | Configured / Not Configured |
 
 ## Workflow B: Review Organization Coverage

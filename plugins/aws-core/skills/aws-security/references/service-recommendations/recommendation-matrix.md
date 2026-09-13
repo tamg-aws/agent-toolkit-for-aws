@@ -182,7 +182,7 @@ For each recommendation:
   Justified by:  <resource/count or verified account/activity condition; account/region scope>
   Current state: OBSERVED <configuration/coverage> | NOT ENABLED (validated) | UNKNOWN <reason> | NOT ASSESSED | NOT APPLICABLE | ADVISORY
   Guide section: <guide page> | n/a (not guide-sourced)
-  Cost note:     <free trial, usage page, or billing consideration>
+  Cost note:     <verified pricing/usage implication, or UNKNOWN with needed evidence>
   Advisory action: <proposed change in prose>
   Handoff:       <separate implementation workflow for an accepted recommendation>
 ```

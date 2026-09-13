@@ -1,6 +1,6 @@
 # Sensitive-data discovery decisions
 
-Use for a selected Macie assurance question under the [recommendation workflow](../service-recommendations.md).
+Use the parent skill’s focused-recommendation rules. Load the [full workflow](../service-recommendations.md) only for collection, broad review or cost reduction.
 Read only the matching [enablement checks](enablement-checks.md) when collection is needed.
 
 ## Assurance and scanability

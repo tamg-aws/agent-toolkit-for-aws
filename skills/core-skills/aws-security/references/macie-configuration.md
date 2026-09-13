@@ -87,7 +87,7 @@ Works from both standalone accounts and delegated administrator accounts.
    |---|---|
    | Macie Enabled | Enabled / Not Enabled |
    | Automated Discovery | Configured / Not Configured |
-   | Classification Jobs | Active / Paused / Not Configured |
+   | Classification Jobs | Observed job states and counts; result production not established |
    | Findings Publication (classification) | Enabled / Not Enabled |
    | Findings Publication (policy) | Enabled / Not Enabled |
    | Export Destination Encryption | SSE-KMS / Not Configured |
@@ -133,10 +133,12 @@ Works from both standalone accounts and delegated administrator accounts.
    | Delegated Admin Configured | Enabled / Not Enabled |
    | Auto-Enable New Accounts | Enabled / Not Enabled |
    | Auto-Enable Automated Discovery | Enabled / Not Enabled |
-   | Member Coverage | Members enrolled: N (full member details available on request) |
+   | Member relationships | Observed enrollment/status counts, or UNKNOWN; discovery coverage separate |
    | Automated Discovery (admin) | Configured / Not Configured |
    | Findings Publication (classification) | Enabled / Not Enabled |
    | Findings Publication (policy) | Enabled / Not Enabled |
+
+Running jobs do not establish result production; publication settings do not establish delivery; membership does not establish effective discovery coverage. Preserve these as separate observations, with absent outcome evidence NOT ASSESSED or UNKNOWN as appropriate.
 
 ## Constraints
 

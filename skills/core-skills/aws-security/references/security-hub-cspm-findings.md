@@ -47,7 +47,7 @@ This skill works from both standalone accounts and delegated administrator accou
 5. Summarize:
 
    - Per standard: PASSED / FAILED / NOT_AVAILABLE counts
-   - Overall compliance percentage
+   - Finding-level pass percentage only when PASSED and FAILED counts share a complete, matching scope; otherwise mark the rate unavailable or sampled. Do not call this a unique-control compliance score.
    - Severity breakdown of failed findings
 
 ## Workflow B: Failed Controls Summary
@@ -97,7 +97,7 @@ For customers using Security Hub CSPM as their primary hub:
 
 - MUST filter ProductName='Security Hub' to isolate CSPM findings from integrations (Workflows A, B)
 - MUST report compliance status counts (PASSED, FAILED, NOT_AVAILABLE)
-- MUST include overall compliance rate as percentage
+- MUST distinguish finding records from unique controls and resources. State the denominator and scope for any percentage; do not add overlapping status queries or infer unique-control counts from finding totals.
 - MUST prioritize CRITICAL and HIGH severity failed controls
 - MUST filter RecordState=ACTIVE to exclude archived findings
 - SHOULD break down by standard (use GeneratorId prefix)
