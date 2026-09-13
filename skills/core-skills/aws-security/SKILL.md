@@ -7,6 +7,8 @@ metadata:
 
 # AWS Security
 
+Use this skill with local AWS CLI or AWS MCP. AWS MCP is recommended for sandboxed execution and audit logging.
+
 Read the relevant bundled procedure before operational guidance. Match intent before service name; reuse an already-read, current copy. For conceptual questions, explain from the relevant reference without AWS account discovery. Live reads require an account assessment request and established scope; an example, prioritization question or suitability question alone does not authorize discovery.
 
 ## Global rules
