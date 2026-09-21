@@ -4,6 +4,14 @@ Workload rows require discovered resources or confirmed use; baseline and organi
 rows require their stated conditions. Apply gaps only to validated negative evidence,
 not UNKNOWN or NOT ASSESSED checks. Record NOT APPLICABLE when irrelevance is verified.
 
+Centralized log store rows: the Security Reference Architecture names Amazon CloudWatch the
+recommended primary option for centralized log collection and analytics, with Amazon Security
+Lake the secondary option for organizations with existing investments or subscriber-based
+access requirements. The Security Lake source rows below stay correct for an existing
+deployment and no row here implies the service is going away. Read the
+[log-store decision](posture-and-investigation.md#lake-sources-and-consumers) before
+recommending either store.
+
 ## Baseline: account activity and stated conditions
 
 These use account activity plus the row-specific conditions rather than a workload trigger.
@@ -15,6 +23,7 @@ These use account activity plus the row-specific conditions rather than a worklo
 | Security Hub CSPM with FSBP | **Critical** | Baseline posture standard; the guide's starting point |
 | IAM Access Analyzer external-access analyzer | **High** | Surfaces unintended external access to resources |
 | Cross-region finding aggregation, when more than one region is in use | **High** | Regional services produce fragmented findings otherwise |
+| AWS Security Incident Response, where GuardDuty or Security Hub CSPM produces findings and validated evidence shows no triage or escalation owner | Medium (verified gap only) | Sits downstream of detection: it ingests and triages threat detection findings from GuardDuty and Security Hub CSPM, and never substitutes for either. Evaluate and hand off; unverified ownership is UNKNOWN, not a gap. Read [producer coverage](posture-and-investigation.md#hub-capability-and-producer-coverage) for the boundaries |
 
 ## Triggered by compute
 
@@ -75,7 +84,7 @@ For discovery completeness or export evidence, read the relevant [Macie decision
 | Internal ALB, no WebACL | n/a unless it indirectly handles unfiltered traffic from a network you do not control | n/a |
 | API Gateway REST API not behind CloudFront, no WebACL | AWS WAF — route to the `waf` skill | High |
 | Internet-facing NLB or non-HTTP ingress with an established traffic-inspection requirement | Evaluate Network Firewall for that requirement; presence alone is not a gap. Shield Advanced follows its own row | Medium |
-| Confirmed public or private application needing AppSec assessment | Evaluate AWS Security Agent through [application fit and scope](application-security.md#application-fit-and-scope); conditional AppSec-owner handoff | Low |
+| Confirmed public or private application needing AppSec assessment | Evaluate AWS Security Agent (now part of AWS Continuum) through [application fit and scope](application-security.md#application-fit-and-scope); conditional AppSec-owner handoff | Low |
 | VPC with no DNS Firewall rule group association | Route 53 Resolver DNS Firewall with AWS-managed lists — route to the `route53` skill | High |
 | DNS Firewall associated, no query logging | Enable Resolver query logging | Medium |
 | DNS Firewall associated, Advanced rules off | DNS Firewall Advanced for tunneling and DGA detection | Medium |
@@ -142,6 +151,8 @@ coverage, then retire the old one. Flag a long-lived overlap, not the overlap it
 |---|---|---|
 | More than one member account | Delegated administrator per service in the security tooling account | **Critical** |
 | Security Lake in use | Delegated administrator in the **Log Archive** account | High |
+| Centralized log collection and analytics in use or being selected | CloudWatch delegated administrator in a dedicated **Monitoring** account in the Security OU, the SRA's recommended primary option. Log Archive stays a storage sink and runs no analytics workloads. The SRA's own pages diverge on this placement; disclose the conflict with the [log-store decision](posture-and-investigation.md#lake-sources-and-consumers) | High |
+| CloudWatch pipelines and Security Lake both collecting the same AWS vended logs with no stated reason | Audit which store each consumer actually reads before changing either. Both can collect CloudTrail management events, CloudTrail S3 and Lambda data events, VPC Flow Logs, WAF logs, Route 53 resolver logs and EKS audit logs, and CloudWatch can also ingest Security Hub CSPM findings, so overlap alone is not a gap | Medium |
 | Members enrolled, auto-enable off under local configuration | Auto-enable for new accounts | **Critical** |
 | Inspector config drift concern | AWS Organizations Inspector policy | High |
 | Per-account Security Hub setup | Central configuration policy | High |
@@ -151,9 +162,10 @@ coverage, then retire the old one. Flag a long-lived overlap, not the overlap it
 | More than 1200 accounts | Note the Detective behavior graph quota | Medium |
 
 Delegated administrator placement per the Security Reference Architecture: GuardDuty,
-Security Hub, Inspector, Macie, and Detective in one security tooling account; Security
-Lake in the Log Archive account. With Control Tower, that is the existing Audit or
-Security account. Flag any divergence.
+Security Hub, Inspector, Macie, Detective and Security Incident Response in one security
+tooling account; Security Lake in the Log Archive account; CloudWatch in a dedicated
+Monitoring account in the Security OU. With Control Tower, the security tooling account is
+the existing Audit or Security account. Flag any divergence.
 
 ## Priority assignment
 
@@ -187,10 +199,10 @@ For each recommendation:
   Handoff:       <separate implementation workflow for an accepted recommendation>
 ```
 
-`Guide section: n/a` is correct and expected for IAM Access Analyzer, the
-`AutoEnableOrganizationMembers: ALL` pass condition, the DNS Firewall fail-open check, the
-PCI DSS v3.2.1 retirement fact, and the priority ranking itself. AWS Config cites the CSPM
-guide's standalone case. Do not invent a citation to fill the field — an unsourced
+`Guide section: n/a` is correct and expected for IAM Access Analyzer, AWS Security Incident
+Response, CloudWatch, the `AutoEnableOrganizationMembers: ALL` pass condition, the DNS
+Firewall fail-open check, the PCI DSS v3.2.1 retirement fact, and the priority ranking
+itself. AWS Config cites the CSPM guide's standalone case. Do not invent a citation to fill the field — an unsourced
 recommendation labelled as such is more useful than a fabricated reference.
 
 ## Focused suitability beyond enablement

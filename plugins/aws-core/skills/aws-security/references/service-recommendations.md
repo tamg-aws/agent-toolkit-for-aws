@@ -71,8 +71,12 @@ request while still excluding prohibited fields. Store requested reports in the 
 Use the delegated administrator for member visibility or management account to identify
 admins. Member-account observations describe that account only; delegated status is per
 service. Report relationships with masked IDs, including placement differences: the Security
-Reference Architecture places GuardDuty, Hub, Inspector, Macie and Detective in security
-tooling, and Security Lake in Log Archive.
+Reference Architecture places GuardDuty, Hub, Inspector, Macie, Detective and Security
+Incident Response in security tooling, Security Lake in Log Archive, and the CloudWatch
+delegated administrator in a dedicated Monitoring account in the Security OU. The SRA's own
+pages diverge on that last placement; the
+[log-store decision](service-recommendations/posture-and-investigation.md#lake-sources-and-consumers)
+records the conflict.
 
 Broad coverage requests do not authorize detailed member enumeration. Prefer verified
 scope-filtered counts/statistics; mark unrequested detail/reconciliation NOT ASSESSED.
@@ -167,10 +171,11 @@ can help diagnose permissions but cannot turn an ambiguous error into not enable
 `RUNTIME_MONITORING` is `DISABLED`. Check the feature status from `get-detector` first;
 do not report this as a coverage failure.
 
-**Successful, complete empty `detective list-graphs`** — No graph observed in this scope.
-The guide states GuardDuty is a prerequisite; verify current Detective eligibility before
-presenting it as mandatory. If unverified, report eligibility UNKNOWN, retain GuardDuty's
-findings-integration role, and do not recommend extra enablement solely for that gate.
+**Successful, complete empty `detective list-graphs`** — No graph observed in this scope;
+treat as NOT ENABLED. GuardDuty is not a prerequisite, so do not recommend enabling it to
+satisfy a gate. The live relationship is administrator-account alignment; see the
+eligibility note in
+[enablement checks](service-recommendations/enablement-checks.md#amazon-detective).
 
 **Config recorder exists but reports no resources (standalone CSPM)** — Check
 `describe-configuration-recorder-status` for `recording: true` and `lastStatus: SUCCESS`,
@@ -189,11 +194,23 @@ Prioritize current developer guidance over lagging reference catalogs and disclo
 These qualifications reuse reviewed material; they are not a fresh certification of all AWS claims.
 
 IAM Access Analyzer is supplemental, not a guide service. AWS Config is included for the
-CSPM standalone-recorder context. Priority rankings, resource triggers, the three-pass
+CSPM standalone-recorder context. AWS Security Incident Response and Amazon CloudWatch are
+not guide services either: their rows cite `n/a (not guide-sourced)`, draw on current service
+documentation, and use the Security Reference Architecture as placement context only.
+Priority rankings, resource triggers, the three-pass
 workflow, GuardDuty ALL auto-enable pass condition and DNS fail-open observation are this
 skill's design. PCI DSS v3.2.1 retirement is external context. Do not attribute these to the
 guide or replace observed findings severity with recommendation priorities. API names/enums
 come from API models rather than guide prose.
 
+Superseded guide claim: the pinned guide states GuardDuty is a Detective prerequisite. The
+current [Detective prerequisites](https://docs.aws.amazon.com/detective/latest/userguide/detective-prerequisites.html)
+list only the required IAM permissions and AWS CLI 1.16.303 or later, and the
+[Detective recommendations](https://docs.aws.amazon.com/detective/latest/userguide/detective-recommendations.html)
+page carries both the administrator-alignment recommendation and the documented statement
+that changing the GuardDuty finding publishing frequency has no effect on the cost of using
+GuardDuty. Current documentation governs, per the disagreement rule above.
+
 [Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/welcome.html)
-provides administrator-placement context.
+provides administrator-placement context, including the two-option centralized log
+collection decision.

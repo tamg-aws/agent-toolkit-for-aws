@@ -41,7 +41,7 @@ Read the relevant bundled procedure before operational guidance. Match intent be
 
 ### Focused recommendations
 
-Read only the domain relevant to the decision; follow additional links only for a necessary prerequisite or collection procedure.
+Read only the domain relevant to the decision; follow additional links only for a necessary prerequisite or collection procedure. The matrix's trigger rows may be read to route a decision and supply its content; that read authorizes no account discovery and carries no priority.
 
 | Decision | Reference under `references/service-recommendations/` |
 |---|---|
@@ -60,7 +60,7 @@ Apply these rules even when loading a domain directly:
 - Before authorized live reads, verify identity, selected profile, accounts, regions and relevant organization role using the recommendation workflow's scope procedure. Propagate the profile to every call. Reuse complete scope-matched evidence; do not enumerate members without an explicit detailed-account request.
 - Record source, timestamp, resource/account/region scope, completion and errors. Configuration, membership or presence does not prove enabled status, delivery, enforcement, renewal or effective coverage. Report observed fields separately from inferred explanations. Denied, partial, stale or missing evidence is UNKNOWN; intentionally unrun checks are NOT ASSESSED; verified irrelevant/ineligible checks are NOT APPLICABLE. Only validated negatives establish NOT ENABLED.
 - Summarize scoped evidence, limitations, advisory action, exact guide section (or `n/a (not guide-sourced)`) and cost/visibility implications. Pricing not assessed means cost UNKNOWN; never infer free/no incremental cost from read-only advice. Quantified savings need matching usage, payer, plan and time evidence. Follow the full workflow's cost rules before reductions.
-- Load the matrix's priority/report section only when assigning a priority to a verified gap. Preserve service severity and AttackSequence/Exposure ordering separately. Pinned guide commit `f2b28d7c31c490ad676273307cbdb900c16daed8` establishes provenance, not current availability; verify eligibility/pricing conflicts through current AWS documentation (MCP first).
+- Apply the matrix's Priority assignment and Report format sections only when assigning a priority to a verified gap. Preserve service severity and AttackSequence/Exposure ordering separately. Pinned guide commit `f2b28d7c31c490ad676273307cbdb900c16daed8` establishes provenance, not current availability; verify eligibility/pricing conflicts through current AWS documentation (MCP first).
 - Never initiate scans, pentests, verification, investigations, queries, analyses, captures or exports, including DryRun writes. No suppression, archival or dismissal advice. A separate implementation handoff names the owner, scope, intended behavior, prerequisites and validation; it does not authorize execution. Route to `waf`, `route53`, `shieldadvanced` or `pentesting-with-aws-security-agent` only if installed and suitable; otherwise name the responsible owner. Do not assume a Network Firewall skill exists. Accepted work requires an operation-specific least-privilege implementation task.
 
 ## Sub-skill registry

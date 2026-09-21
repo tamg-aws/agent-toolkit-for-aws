@@ -1,13 +1,20 @@
-# AWS Security Agent application suitability
+# AWS Security Agent (now part of AWS Continuum) application suitability
 
 Use the parent skill’s focused-recommendation rules. Load the [full workflow](../service-recommendations.md) only for collection, broad review or cost reduction.
 Security Agent suitability is application-specific, not an account-wide enabled state.
+
+Current service documentation names the capability this file covers Continuum for penetration
+testing. The pinned guide predates that naming, so accept either form from the user and use
+the short form "Security Agent" below. The service's other Continuum capabilities are out of
+scope here. `pentesting-with-aws-security-agent` is a skill identifier and stays literal.
 
 ## Application fit and scope
 
 Compare the requested assurance with existing code/design/supply-chain review and dynamic
 testing. A deployed WAF does not prove the application has been tested; a clean test does
-not prove comprehensive security or replacement of those other controls.
+not prove comprehensive security or replacement of those other controls. The suitability
+questions below cover the penetration testing path, which is the one carrying target,
+reachability and authorization constraints.
 
 Request ownership, exact target domains, the login/access-domain redirect chain, permitted
 navigation and destructive/auth-mutation exclusions. For private verification, the reviewed

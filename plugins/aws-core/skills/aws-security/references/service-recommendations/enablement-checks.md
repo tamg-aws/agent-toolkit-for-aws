@@ -47,7 +47,7 @@ Optional protection plans, which are the ones worth checking:
 | `RUNTIME_MONITORING` | EC2, ECS, EKS runtime | EC2, ECS, or EKS on EC2 |
 | `EKS_RUNTIME_MONITORING` | EKS runtime (superseded by `RUNTIME_MONITORING`) | EKS on EC2 |
 | `AI_PROTECTION` | CloudTrail data events from Bedrock, Bedrock AgentCore, and SageMaker AI, plus management events | Bedrock, AgentCore, or SageMaker AI in use |
-| `AI_ANALYST` | GuardDuty Investigation (AI-powered finding analysis; preview; verify current region eligibility) | Optional; any account in a supported region |
+| `AI_ANALYST` | GuardDuty Investigation, AI-powered finding analysis. Documented as preview at the time of writing, where the console names it "AI powered investigations - Preview"; confirm current availability and Region eligibility for the proposed use | Optional; requires an active detector in the same Region |
 
 Runtime Monitoring has an `AdditionalConfiguration` array for agent management:
 `EC2_AGENT_MANAGEMENT`, `ECS_FARGATE_AGENT_MANAGEMENT`, `EKS_ADDON_MANAGEMENT`. The guide
@@ -82,7 +82,9 @@ uncovered; `NONE` means manual management.
 
 **Pass conditions:** detector exists; every feature whose triggering resource is present
 is `ENABLED`; `AutoEnableOrganizationMembers` is `ALL` in an org; finding publishing
-frequency tightened from the 6-hour default (15 minutes if Detective is in use); S3 Malware
+frequency tightened from the 6-hour default (15 minutes if Detective is in use; AWS states
+that changing this setting has no effect on the cost of using GuardDuty, a statement scoped
+to `FindingPublishingFrequency` alone and not to any consumer's own charges); S3 Malware
 Protection plans exist for the buckets identified as taking untrusted uploads.
 
 ## AWS Security Hub CSPM
@@ -404,17 +406,23 @@ aws detective list-members --graph-arn <arn> \
   --query 'MemberDetails[].{Id:AccountId,Status:Status}' --region <region>
 ```
 
-**Eligibility:** the guide states GuardDuty is a prerequisite. Verify current Detective
-eligibility before treating that claim as mandatory; if unavailable, report eligibility
-UNKNOWN. Preserve the GuardDuty findings integration, but do not recommend extra enablement
-solely to satisfy an unverified gate. This does not establish that the prerequisite was removed.
+**Eligibility:** GuardDuty is **not** a prerequisite. The current
+[Detective prerequisites](https://docs.aws.amazon.com/detective/latest/userguide/detective-prerequisites.html)
+are the required IAM permissions and AWS CLI 1.16.303 or later; the pinned guide's
+prerequisite claim is superseded. GuardDuty's actual relationship is a recommendation to
+align the administrator account across GuardDuty, Security Hub CSPM and Detective so the
+finding pivot and the archive-from-Detective integration work. Do not recommend enabling
+GuardDuty solely to satisfy a prerequisite gate.
 
-**Pass conditions:** graph exists; auto-enable on; GuardDuty finding publishing frequency
-set to 15 minutes (the 6-hour default delays recurring-finding updates in Detective by up
-to 6 hours, and tightening it costs nothing); source packages for AWS security findings
-and EKS audit logs enabled — older deployments must turn these on manually; where Security
-Lake is also in use, the Detective integration lets investigators pull the underlying logs
-with a pre-built Athena query.
+**Pass conditions:** graph exists; auto-enable on; administrator account aligned with
+GuardDuty and Security Hub CSPM where those are in use; GuardDuty finding publishing
+frequency set to 15 minutes (the 6-hour default delays recurring-finding updates in
+Detective by up to 6 hours; AWS states that changing this setting has no effect on the cost
+of using GuardDuty, which says nothing about Detective's own charges); source packages for
+AWS security findings and EKS audit logs enabled — older deployments must turn these on
+manually; where Security Lake is also in use, the Detective integration lets investigators
+pull the underlying logs with a pre-built Athena query. Source:
+[Detective recommendations](https://docs.aws.amazon.com/detective/latest/userguide/detective-recommendations.html).
 
 **Quota:** a behavior graph supports a maximum of 1200 accounts.
 
@@ -422,8 +430,9 @@ with a pre-built Athena query.
 
 ```bash
 aws securitylake list-data-lakes --regions <region>
-# get-data-lake-sources filters by account, not region
+# get-data-lake-sources filters by account, not region, and returns no source version
 aws securitylake get-data-lake-sources --accounts <account-id>
+# The only read here that returns sourceVersion, under sources[].sources[].awsLogSource
 aws securitylake list-log-sources --regions <region>
 aws securitylake get-data-lake-organization-configuration
 aws securitylake get-data-lake-exception-subscription
@@ -436,6 +445,15 @@ The guide recommends enabling all **default** sources: `CLOUD_TRAIL_MGMT`, `EKS_
 `ROUTE53`, `SH_FINDINGS`, `VPC_FLOW`. Treat `S3_DATA`, `LAMBDA_EXECUTION`, and `WAF` as
 opt-in — they are excluded by default for high volume and cost.
 
+Each AWS source also carries a `sourceVersion`, which matches `latest` or an `N.N` value
+such as `2.0`. Security Lake ingests the latest version by default. Record the observed
+`sourceVersion` per source, account and region instead of requiring a particular value: a
+newer version is not automatically safe for current consumers, and selecting a version
+requires a matching subscriber update before those consumers can read it. Custom sources
+carry no `sourceVersion`, so mark that NOT APPLICABLE, not UNKNOWN. Do not confuse the
+field value with OCSF table or S3 prefix naming such as `vpc_flow_2_0`, which cannot appear
+in this field.
+
 **Prerequisite:** `CLOUD_TRAIL_MGMT` collection requires an existing multi-region
 organization trail capturing read and write management events.
 
@@ -443,8 +461,47 @@ organization trail capturing read and write management events.
 used by the other five services.
 
 **Pass conditions:** data lake exists; all five default sources on; new-account
-collection enabled; if rollup regions are configured, contributing-region retention matches
-verified investigation and recovery needs.
+collection enabled; the observed `sourceVersion` recorded for each enabled source, with any
+subscriber update the selected version still needs identified; if rollup regions are
+configured, contributing-region retention matches verified investigation and recovery needs.
+
+## AWS Security Incident Response
+
+Downstream of detection: it ingests and triages findings that GuardDuty and Security Hub
+CSPM produce. It is not a detection service and never substitutes for them. Enabling
+GuardDuty or Security Hub CSPM first is strongly recommended but is not required to
+activate it, so absent detection coverage is a separate finding, not a blocked prerequisite.
+
+```bash
+# Membership ID and status. Run from the delegated administrator account.
+aws security-ir list-memberships
+
+# Full membership detail, including account scope and the incident response team
+aws security-ir get-membership --membership-id <membership-id>
+
+# Case inventory. Apply the parent sensitive-data rules: summarize status counts and mask
+# case IDs and titles by default; case content is incident data, not configuration.
+aws security-ir list-cases
+
+# Delegated administrator registration for the service
+aws organizations list-delegated-administrators \
+  --service-principal security-ir.amazonaws.com
+```
+
+**Pass conditions:** membership status `Active` (`Pending` means onboarding is incomplete);
+account scope covers the intended organizational units; at least two incident response team
+members configured, which the service requires; the registered Region matches where the
+assessed workloads run. Coverage is selected at organization or OU level, not per account,
+and every account in a selected OU including child OUs is covered. A membership existing is
+not account coverage: only accounts enrolled in the membership are monitored, so reconcile
+the covered OUs against the assessed scope before calling coverage complete. Findings
+created before onboarding are not ingested retroactively.
+
+**Cost note:** charges are metered on findings ingested, with the first 10,000 findings per
+month free, and the service is included for Enterprise Support and Unified Operations
+customers. None of that yields a figure without evidence, so report cost UNKNOWN pending
+verified ingestion volume and the account's support tier, and read the current per-finding
+rate from AWS pricing. No rate is recorded here.
 
 ## IAM Access Analyzer
 
@@ -507,6 +564,7 @@ sensitive-field exclusions. Unrequested member detail is NOT ASSESSED.
 | Macie | | | | | |
 | Detective | | | | | |
 | Security Lake | | | | | |
+| Security Incident Response | | | | | n/a (OU scope) |
 | IAM Access Analyzer | | | | n/a | n/a |
 | AWS Config | | | | | |
 | ACM | always on | | | n/a | n/a |
