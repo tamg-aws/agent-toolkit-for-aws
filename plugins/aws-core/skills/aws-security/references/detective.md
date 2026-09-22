@@ -54,6 +54,16 @@ Detective investigations use a severity score:
 ## Service Notes
 
 - **Detective**: Ingests Security Hub CSPM findings in ASFF format but produces investigations in its own proprietary format. Does NOT support S3 data events. Focuses on investigations and finding groups, not findings.
+- **GuardDuty is not a prerequisite.** Detective's documented prerequisites are the
+  `AmazonDetectiveFullAccess` IAM permissions and, for CLI use, AWS CLI 1.16.303 or later.
+  Enabling GuardDuty first is not required.
+- **The live relationship is administrator-account alignment.** When both services run, align the
+  administrator account across GuardDuty, Security Hub CSPM and Detective so the finding pivot and
+  the archive-from-Detective integration work. State this whenever answering whether GuardDuty is
+  needed before Detective: it is the substantive relationship that replaces the superseded
+  prerequisite claim. Do not recommend enabling GuardDuty solely to satisfy a prerequisite gate.
+  Fit and package detail is in
+  [investigation fit](service-recommendations/posture-and-investigation.md#investigation-fit).
 
 ## Output Sensitivity
 

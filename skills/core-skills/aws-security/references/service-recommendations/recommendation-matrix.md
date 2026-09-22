@@ -4,6 +4,11 @@ Workload rows require discovered resources or confirmed use; baseline and organi
 rows require their stated conditions. Apply gaps only to validated negative evidence,
 not UNKNOWN or NOT ASSESSED checks. Record NOT APPLICABLE when irrelevance is verified.
 
+The priority column is conditional, not descriptive. No value in it may be emitted for a
+requirements-only or ADVISORY answer, or for any recommendation whose gap is not established by
+validated negative evidence. Reading a trigger row for its recommendation carries no priority
+with it.
+
 Centralized log store rows: the Security Reference Architecture names Amazon CloudWatch the
 recommended primary option for centralized log collection and analytics, with Amazon Security
 Lake the secondary option for organizations with existing investments or subscriber-based
@@ -16,7 +21,7 @@ recommending either store.
 
 These use account activity plus the row-specific conditions rather than a workload trigger.
 
-| Recommendation | Priority | Rationale |
+| Recommendation | Priority if verified as a gap | Rationale |
 |---|---|---|
 | GuardDuty foundational (CloudTrail, VPC flow, DNS analysis) | **Critical** | Threat detection with no data-source configuration; pulls streams directly |
 | AWS Config recorder, **when Security Hub CSPM runs standalone** | **Critical** | Standalone CSPM uses your recorder for most controls. With unified Security Hub also enabled, CSPM manages the service-linked recorder `AWSConfigurationRecorderForSecurityHubCSPM` and this row does not apply |
@@ -27,7 +32,7 @@ These use account activity plus the row-specific conditions rather than a worklo
 
 ## Triggered by compute
 
-| Trigger from pass 1 | Recommend | Priority |
+| Trigger from pass 1 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | Any EC2 instance | GuardDuty `EBS_MALWARE_PROTECTION` | High |
 | Any EC2 instance | Inspector `EC2` scanning through Enhanced EC2 Scanning (the VM Scanner), not the legacy SSM plugin | High |
@@ -42,7 +47,7 @@ For scanner/coverage nuances, read [runtime and workload coverage](detection-and
 
 ## Triggered by containers
 
-| Trigger from pass 1 | Recommend | Priority |
+| Trigger from pass 1 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | Any ECR repository | Inspector `ECR` scanning, continuous | High |
 | ECR repository with images | ECR rescan duration tuned to build cadence | Medium |
@@ -58,7 +63,7 @@ For agent rollout or image relevance, read [runtime and workload coverage](detec
 
 ## Triggered by data
 
-| Trigger from pass 1 | Recommend | Priority |
+| Trigger from pass 1 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | Any S3 bucket | GuardDuty `S3_DATA_EVENTS` | High |
 | Any S3 bucket | Macie automated sensitive data discovery | High |
@@ -75,7 +80,7 @@ For discovery completeness or export evidence, read the relevant [Macie decision
 
 ## Triggered by network and edge
 
-| Trigger from pass 1 | Recommend | Priority |
+| Trigger from pass 1 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | Internet-facing ALB **not** behind CloudFront, no WebACL | AWS WAF — route to the `waf` skill | **Critical** |
 | CloudFront distribution with application logic behind it, no WebACL | AWS WAF at the CloudFront layer — route to the `waf` skill | **Critical** |
@@ -106,7 +111,7 @@ For origin bypass, read [endpoint coverage](web-protection.md#endpoint-coverage-
 
 ## Triggered by certificates
 
-| Trigger from pass 1 | Recommend | Priority |
+| Trigger from pass 1 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | Certificate estate with demonstrated unmet monitoring coverage, delivery or lead-time needs after evaluating the chosen monitoring method | Close the verified monitoring gap; EventBridge expiry routing to SNS is an option only when event applicability and unmet needs justify it. Adequate CloudWatch alarms or issuer-side checks require no duplicate route; unknown monitoring stays UNKNOWN | High (verified gap only) |
 | Certificate with `Type: IMPORTED` | Renewal automation (the guide's pattern is an AWS Config rule plus Lambda); ACM does not renew imports. Verify expiration monitoring separately | High |
@@ -129,7 +134,7 @@ breach.
 Triggered by pass 2 rather than pass 1 — these are findings about how enabled standards
 are configured.
 
-| Observed in pass 2 | Recommend | Priority |
+| Observed in pass 2 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | Unified Security Hub enabled **and** CSPM still ingesting AWS service or third-party findings that Security Hub already aggregates | Duplicate ingestion — audit EventBridge, SIEM, ticketing, and Lambda consumers first, then disable that ingestion in CSPM. Keep Macie publishing to CSPM (it is how sensitive-data traits reach Security Hub) and keep the cross-region finding aggregator, which central configuration requires | Medium |
 | Unified Security Hub enabled, Threat Analytics off | Consider Threat Analytics for production so GuardDuty detections appear beside the misconfigurations that enabled them | Medium |
@@ -147,7 +152,7 @@ coverage, then retire the old one. Flag a long-lived overlap, not the overlap it
 
 ### Organization posture
 
-| Trigger from pass 1 | Recommend | Priority |
+| Trigger from pass 1 | Recommend | Priority if verified as a gap |
 |---|---|---|
 | More than one member account | Delegated administrator per service in the security tooling account | **Critical** |
 | Security Lake in use | Delegated administrator in the **Log Archive** account | High |

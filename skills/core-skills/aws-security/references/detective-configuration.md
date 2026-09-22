@@ -8,6 +8,13 @@ Detective ingests CloudTrail management events, VPC Flow Logs, EKS Audit Logs, a
 
 Works from both standalone accounts and delegated administrator accounts.
 
+GuardDuty is not a Detective prerequisite: the documented prerequisites are the
+`AmazonDetectiveFullAccess` IAM permissions and, for CLI use, AWS CLI 1.16.303 or later. What the
+two services do share is administrator-account alignment. Align the administrator account across
+GuardDuty, Security Hub CSPM and Detective so the finding pivot and the archive-from-Detective
+integration work, and report misalignment as a finding of this review. Never recommend enabling
+GuardDuty solely to satisfy a prerequisite gate.
+
 ## Classify the Request
 
 | Signal | Workflow |
