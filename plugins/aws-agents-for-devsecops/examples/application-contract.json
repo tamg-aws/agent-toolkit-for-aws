@@ -1,0 +1,165 @@
+{
+  "schema_version": "application-contract-v1",
+  "author": "fixture-maintainer",
+  "developer_confirmation": "Replace with the recorded developer confirmation for this application.",
+  "repository": {
+    "provider": "github",
+    "name": "example/invoice-api"
+  },
+  "source_binding": {
+    "revision": "REPLACE_WITH_BASELINE_COMMIT",
+    "environment_id": "fixtureenv",
+    "scan_id": "fixturescan",
+    "level": "independently_compared",
+    "evidence": "Controlled synthetic fixture; not a service-attested scan of an application."
+  },
+  "image": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "max_candidate_runs": 6,
+  "allowed_paths": [
+    "invoice_app/authorization.py",
+    "invoice_app/presentation.py",
+    "invoice_app/service.py"
+  ],
+  "protected_paths": [
+    "tests/__init__.py",
+    "tests/test_invoice_app.py"
+  ],
+  "output_directories": [],
+  "environment": {
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "checks": [
+    {
+      "id": "build",
+      "kind": "build",
+      "argv": [
+        "python",
+        "-c",
+        "import pathlib; [compile(p.read_text(), str(p), \"exec\") for p in pathlib.Path(\"invoice_app\").glob(\"*.py\")]"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [],
+      "expected_baseline_exit": 0
+    },
+    {
+      "id": "lint",
+      "kind": "lint",
+      "argv": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--select",
+        "E9,F63,F7,F82",
+        "invoice_app",
+        "tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [],
+      "expected_baseline_exit": 0
+    },
+    {
+      "id": "unit",
+      "kind": "unit",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_invoice_app.ValidBehaviorTests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [],
+      "expected_baseline_exit": 0
+    },
+    {
+      "id": "idor",
+      "kind": "negative",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_invoice_app.SecurityRegressionTests.test_cross_tenant_invoice_denied"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [
+        "FIXTURE-IDOR"
+      ],
+      "expected_baseline_exit": 1,
+      "baseline_signature": "IDOR_CROSS_TENANT_READ"
+    },
+    {
+      "id": "projection",
+      "kind": "negative",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_invoice_app.SecurityRegressionTests.test_public_projection_excludes_processor_token"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [
+        "FIXTURE-PRIVATE-FIELD"
+      ],
+      "expected_baseline_exit": 1,
+      "baseline_signature": "PRIVATE_FIELD_LEAK"
+    },
+    {
+      "id": "valid",
+      "kind": "valid",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_invoice_app.ValidBehaviorTests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [
+        "FIXTURE-IDOR",
+        "FIXTURE-PRIVATE-FIELD"
+      ],
+      "expected_baseline_exit": 0
+    },
+    {
+      "id": "integration",
+      "kind": "integration",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_invoice_app.IntegrationSmokeTests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [],
+      "expected_baseline_exit": 0
+    },
+    {
+      "id": "smoke",
+      "kind": "smoke",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "-v",
+        "tests.test_invoice_app.IntegrationSmokeTests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "issue_ids": [],
+      "expected_baseline_exit": 0
+    }
+  ]
+}

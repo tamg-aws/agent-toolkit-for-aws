@@ -9,7 +9,7 @@ version = "0.18"
 
 [tasks.lint]
 description = "Run all linters"
-depends = ["lint:md", "lint:manifests"]
+depends = ["lint:md", "lint:manifests", "lint:continuum"]
 
 [tasks."lint:md"]
 description = "Lint markdown files"
@@ -31,9 +31,20 @@ run = "uv run --with jsonschema --with pyyaml python tools/validate_spec.py"
 description = "Run tests for the repo validation tools"
 run = "python3 -m unittest discover -s tools/tests -v"
 
+[tasks."test:continuum"]
+description = "Test the executable Continuum workflow and signed transport"
+run = "uv run --python 3.12 --with-requirements plugins/aws-agents-for-devsecops/runtime/requirements-intake.txt python -m unittest discover -s plugins/aws-agents-for-devsecops/tests -v"
+
+[tasks."lint:continuum"]
+description = "Lint and format-check the Continuum runtime and tests"
+run = [
+  "uv run --python 3.12 --with ruff==0.14.2 ruff check plugins/aws-agents-for-devsecops/runtime plugins/aws-agents-for-devsecops/tests",
+  "uv run --python 3.12 --with ruff==0.14.2 ruff format --check plugins/aws-agents-for-devsecops/runtime plugins/aws-agents-for-devsecops/tests",
+]
+
 [tasks.validate]
 description = "Run all validation"
-depends = ["lint:manifests", "lint:skill-parity", "lint:spec", "test:tools"]
+depends = ["lint:manifests", "lint:skill-parity", "lint:spec", "test:tools", "test:continuum"]
 
 [tasks.security]
 description = "Run security scans"

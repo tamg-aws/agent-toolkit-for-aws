@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Continuum local immutable event envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sequence", "previous", "kind", "object", "recorded_at"],
+  "properties": {
+    "schema_version": {"const": "continuum-local-v1"},
+    "sequence": {"type": "integer", "minimum": 0},
+    "previous": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "kind": {
+      "enum": [
+        "inventory", "capture_failed", "setup", "plan", "run_intent", "run_error",
+        "check", "container_cleanup", "run", "review", "pr_ready", "pr_observation"
+      ]
+    },
+    "object": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "recorded_at": {"type": "string", "format": "date-time"}
+  }
+}

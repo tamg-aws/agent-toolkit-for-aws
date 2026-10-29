@@ -14,6 +14,8 @@ description: >-
 
 Run a release readiness review via the AWS DevOps Agent. Analyzes a code change for risk, correctness, and potential rollback issues. Returns a structured report with actionable findings.
 
+For an **active Continuum remediation plan**, retain its owner, state and source bindings when using this review. Return actionable feedback to that plan through `remediating-with-continuum`; any code change invalidates the previous combined test/review result. Do not launch a separate automatic remediation loop. The existing DevOps review invocation and standalone flows below remain unchanged.
+
 **Rules:**
 
 - If a **PR/MR URL** is provided: Extract ALL fields from the URL. Do NOT inspect the local workspace or git state.

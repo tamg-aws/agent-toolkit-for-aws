@@ -1,0 +1,79 @@
+{
+  "schema_version": "change-plan-v1",
+  "baseline_snapshot": "REPLACE_WITH_SETUP_BASELINE_HASH",
+  "author": "fixture-author",
+  "review": {
+    "reviewer": "independent-reviewer",
+    "verdict": "approved",
+    "evidence": "Replace with the actual independent review record before freezing."
+  },
+  "source_binding_accepted": true,
+  "findings": [
+    {
+      "finding_id": "f1",
+      "disposition": "selected",
+      "issue_id": "FIXTURE-IDOR",
+      "reason": "Tenant authorization is missing before returning invoice.",
+      "evidence": "invoice_app/authorization.py and protected IDOR control"
+    },
+    {
+      "finding_id": "f2",
+      "disposition": "selected",
+      "issue_id": "FIXTURE-PRIVATE-FIELD",
+      "reason": "Response serializes a private processor token.",
+      "evidence": "invoice_app/presentation.py and protected disclosure control"
+    }
+  ],
+  "issues": [
+    {
+      "id": "FIXTURE-IDOR",
+      "group_id": "authorization",
+      "finding_ids": [
+        "f1"
+      ],
+      "root_cause": "Tenant identity is not checked before invoice projection.",
+      "source_evidence": "invoice_app/authorization.py",
+      "behavior": "Deny other tenants and preserve successful authorized reads.",
+      "paths": [
+        "invoice_app/authorization.py",
+        "invoice_app/service.py"
+      ]
+    },
+    {
+      "id": "FIXTURE-PRIVATE-FIELD",
+      "group_id": "projection",
+      "finding_ids": [
+        "f2"
+      ],
+      "root_cause": "Domain record is returned without public-field projection.",
+      "source_evidence": "invoice_app/presentation.py",
+      "behavior": "Return public fields without private processor token.",
+      "paths": [
+        "invoice_app/presentation.py",
+        "invoice_app/service.py"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "authorization",
+      "rationale": "Shared tenant authorization boundary",
+      "depends_on": []
+    },
+    {
+      "id": "projection",
+      "rationale": "Shared public serialization boundary",
+      "depends_on": []
+    }
+  ],
+  "interactions": [
+    {
+      "from": "authorization",
+      "to": "projection",
+      "verdict": "coupled",
+      "reason": "Authorization needs domain tenant_id before public projection removes it.",
+      "evidence": "invoice_app/service.py order and protected valid HTTP controls",
+      "reviewer": "independent-reviewer"
+    }
+  ]
+}

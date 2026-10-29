@@ -1,7 +1,7 @@
 {
   "name": "aws-agents-for-devsecops",
-  "version": "1.1.0",
-  "description": "Investigate incidents, review code and execute UAT for release readiness, scan code for vulnerabilities, and run penetration tests with AWS DevOps Agent and AWS Security Agent.",
+  "version": "1.2.0-dev.1",
+  "description": "Investigate incidents, review releases, scan code and run penetration tests with AWS DevOps Agent and AWS Security Agent; coordinate Continuum remediation with isolated tests and local PR preparation.",
   "author": {
     "name": "Amazon Web Services",
     "url": "https://github.com/aws/agent-toolkit-for-aws"
@@ -45,7 +45,8 @@
     "threat-model",
     "topology",
     "uat",
-    "ui-testing"
+    "ui-testing",
+    "continuum"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",

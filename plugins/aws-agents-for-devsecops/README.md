@@ -19,6 +19,9 @@ Investigate incidents, review code and execute UAT for release readiness, scan c
 | **Skill** `pentesting-with-aws-security-agent` | `skills/pentesting-with-aws-security-agent/` | Model auto-invokes for penetration testing against live endpoints |
 | **Skill** `threat-modeling-with-aws-security-agent` | `skills/threat-modeling-with-aws-security-agent/` | Model auto-invokes for STRIDE threat model reviews on design docs |
 | **Skill** `remediating-with-aws-security-agent` | `skills/remediating-with-aws-security-agent/` | Model auto-invokes for fetching, triaging, and fixing security findings |
+| **Skill** `remediating-with-continuum` | `skills/remediating-with-continuum/` | Complete Continuum scan accounting, source fixes, isolated tests and combined review |
+| **Command** `/aws-agents-for-devsecops:continuum-remediate` | `commands/continuum-remediate.md` | User invokes the additive Continuum workflow |
+| **Local CLI** `continuum.py` | `runtime/` | Direct Python 3.11+ execution; no MCP required |
 | **Command** `/aws-agents-for-devsecops:setup` | `commands/setup.md` | User and model invokes |
 | **Command** `/aws-agents-for-devsecops:setup-devops-agent` | `commands/setup-devops-agent.md` | User and model invokes |
 | **Command** `/aws-agents-for-devsecops:setup-security-agent` | `commands/setup-security-agent.md` | User and model invokes |
@@ -83,6 +86,8 @@ list my AWS DevOps agent spaces
 ```
 
 ## Auth modes
+
+The additive [Continuum runtime](runtime/README.md) uses the existing AWS profile for read-only signed intake and Docker for isolated application tests. It preserves findings and service issue-level consolidation, adds local cross-issue interaction planning, and binds review to actual combined test receipts. PR preparation is local only; provider publication, merge, release and reassessment are not implemented. Existing DevOps and Security Agent flows below remain available.
 
 | Mode | Config | Use case |
 |------|--------|----------|

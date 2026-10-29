@@ -1,0 +1,40 @@
+{
+  "account": "000000000000",
+  "region": "us-east-1",
+  "environment_id": "fixtureenv",
+  "scan_id": "fixturescan",
+  "origin": "Controlled synthetic fixture; not live Continuum evidence",
+  "limitations": [
+    "Fixture IDs and claims are test data; no AWS scan occurred."
+  ],
+  "findings": [
+    {
+      "findingId": "f1",
+      "environmentId": "fixtureenv",
+      "scanRunId": "fixturescan",
+      "createdIssueId": "s1",
+      "title": "Cross-tenant invoice read"
+    },
+    {
+      "findingId": "f2",
+      "environmentId": "fixtureenv",
+      "scanRunId": "fixturescan",
+      "createdIssueId": "s2",
+      "title": "Private field disclosure"
+    }
+  ],
+  "issues": [
+    {
+      "issueId": "s1",
+      "findingIds": [
+        "f1"
+      ]
+    },
+    {
+      "issueId": "s2",
+      "findingIds": [
+        "f2"
+      ]
+    }
+  ]
+}
