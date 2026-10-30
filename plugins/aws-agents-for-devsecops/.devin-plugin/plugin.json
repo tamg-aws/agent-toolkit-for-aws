@@ -1,7 +1,7 @@
 {
   "name": "aws-agents-for-devsecops",
   "description": "Investigate incidents, review releases, scan code and run penetration tests with AWS DevOps Agent and AWS Security Agent; coordinate Continuum remediation with isolated tests and local PR preparation.",
-  "version": "1.2.0-dev.1",
+  "version": "1.2.0-dev.2",
   "author": {
     "name": "Amazon Web Services"
   },

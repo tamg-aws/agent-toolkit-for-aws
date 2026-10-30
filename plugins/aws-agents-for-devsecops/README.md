@@ -1,6 +1,12 @@
-# aws-agents-for-devsecops — Claude Code plugin
+# aws-agents-for-devsecops
 
 Investigate incidents, review code and execute UAT for release readiness, scan code for vulnerabilities, and run penetration tests with [AWS DevOps Agent](https://aws.amazon.com/devops-agent/?trk=7b4b0d25-1409-441c-b914-c5d08677c376&sc_channel=ghr) and [AWS Security Agent](https://aws.amazon.com/security-agent/?trk=7b4b0d25-1409-441c-b914-c5d08677c376&sc_channel=ghr).
+
+The development candidate adds coordinated Continuum remediation, with Codex as
+the first tested client. Start with the
+[initial review packet](docs/continuum-initial-review.md) for the problem,
+architecture, evidence boundaries and remaining delivery work. The candidate
+prepares local changes and review artifacts; it does not publish or merge PRs.
 
 ## What's inside
 

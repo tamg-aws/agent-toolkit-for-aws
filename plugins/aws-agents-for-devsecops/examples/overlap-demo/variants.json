@@ -1,0 +1,27 @@
+{
+  "baseline": {
+    "invoice_app/authorization.py": "def authorize_invoice(invoice: dict, actor_tenant: str) -> None:\n    # Intentionally vulnerable baseline for a controlled test fixture.\n    return None\n",
+    "invoice_app/presentation.py": "def project_invoice(invoice: dict) -> dict:\n    # Intentionally vulnerable baseline for a controlled test fixture.\n    return dict(invoice)\n",
+    "invoice_app/service.py": "from invoice_app.authorization import authorize_invoice\nfrom invoice_app.presentation import project_invoice\nfrom invoice_app.store import load_invoice\n\n\ndef read_invoice(invoice_id: int, actor_tenant: str) -> dict:\n    domain_invoice = load_invoice(invoice_id)\n    if domain_invoice is None:\n        raise LookupError(\"Invoice not found\")\n    public_invoice = project_invoice(domain_invoice)\n    authorize_invoice(public_invoice, actor_tenant)\n    return public_invoice\n"
+  },
+  "group-a": {
+    "invoice_app/authorization.py": "def authorize_invoice(invoice: dict, actor_tenant: str) -> None:\n    if invoice.get(\"tenant_id\") != actor_tenant:\n        raise PermissionError(\"Invoice belongs to another tenant\")\n",
+    "invoice_app/presentation.py": "def project_invoice(invoice: dict) -> dict:\n    # Intentionally vulnerable baseline for a controlled test fixture.\n    return dict(invoice)\n",
+    "invoice_app/service.py": "from invoice_app.authorization import authorize_invoice\nfrom invoice_app.presentation import project_invoice\nfrom invoice_app.store import load_invoice\n\n\ndef read_invoice(invoice_id: int, actor_tenant: str) -> dict:\n    domain_invoice = load_invoice(invoice_id)\n    if domain_invoice is None:\n        raise LookupError(\"Invoice not found\")\n    public_invoice = project_invoice(domain_invoice)\n    authorize_invoice(public_invoice, actor_tenant)\n    return public_invoice\n"
+  },
+  "group-b": {
+    "invoice_app/authorization.py": "def authorize_invoice(invoice: dict, actor_tenant: str) -> None:\n    # Intentionally vulnerable baseline for a controlled test fixture.\n    return None\n",
+    "invoice_app/presentation.py": "def project_invoice(invoice: dict) -> dict:\n    return {key: invoice[key] for key in (\"id\", \"customer\", \"amount_cents\", \"currency\")}\n",
+    "invoice_app/service.py": "from invoice_app.authorization import authorize_invoice\nfrom invoice_app.presentation import project_invoice\nfrom invoice_app.store import load_invoice\n\n\ndef read_invoice(invoice_id: int, actor_tenant: str) -> dict:\n    domain_invoice = load_invoice(invoice_id)\n    if domain_invoice is None:\n        raise LookupError(\"Invoice not found\")\n    public_invoice = project_invoice(domain_invoice)\n    authorize_invoice(public_invoice, actor_tenant)\n    return public_invoice\n"
+  },
+  "bad-composition": {
+    "invoice_app/authorization.py": "def authorize_invoice(invoice: dict, actor_tenant: str) -> None:\n    if invoice.get(\"tenant_id\") != actor_tenant:\n        raise PermissionError(\"Invoice belongs to another tenant\")\n",
+    "invoice_app/presentation.py": "def project_invoice(invoice: dict) -> dict:\n    return {key: invoice[key] for key in (\"id\", \"customer\", \"amount_cents\", \"currency\")}\n",
+    "invoice_app/service.py": "from invoice_app.authorization import authorize_invoice\nfrom invoice_app.presentation import project_invoice\nfrom invoice_app.store import load_invoice\n\n\ndef read_invoice(invoice_id: int, actor_tenant: str) -> dict:\n    domain_invoice = load_invoice(invoice_id)\n    if domain_invoice is None:\n        raise LookupError(\"Invoice not found\")\n    public_invoice = project_invoice(domain_invoice)\n    authorize_invoice(public_invoice, actor_tenant)\n    return public_invoice\n"
+  },
+  "repaired-composition": {
+    "invoice_app/authorization.py": "def authorize_invoice(invoice: dict, actor_tenant: str) -> None:\n    if invoice.get(\"tenant_id\") != actor_tenant:\n        raise PermissionError(\"Invoice belongs to another tenant\")\n",
+    "invoice_app/presentation.py": "def project_invoice(invoice: dict) -> dict:\n    return {key: invoice[key] for key in (\"id\", \"customer\", \"amount_cents\", \"currency\")}\n",
+    "invoice_app/service.py": "from invoice_app.authorization import authorize_invoice\nfrom invoice_app.presentation import project_invoice\nfrom invoice_app.store import load_invoice\n\n\ndef read_invoice(invoice_id: int, actor_tenant: str) -> dict:\n    domain_invoice = load_invoice(invoice_id)\n    if domain_invoice is None:\n        raise LookupError(\"Invoice not found\")\n    authorize_invoice(domain_invoice, actor_tenant)\n    public_invoice = project_invoice(domain_invoice)\n    return public_invoice\n"
+  }
+}

@@ -2,18 +2,21 @@
 name: remediating-with-aws-security-agent
 description: >-
   Pull AWS Security Agent findings (penetration tests and code reviews) and drive
-  remediation. Use this whenever the user mentions Security Agent, security findings,
-  pentest or penetration test results, code review findings, vulnerabilities found in
-  their AWS account, "what did the security scan find", remediating or triaging security
-  risks, or wants to start fixing reported vulnerabilities — even if they don't name the
-  service explicitly. Trigger it for phrases like "get my security findings", "what
-  vulnerabilities do we have", "let's fix the pentest results", or "triage the security
-  report". The skill discovers scans, exports findings to a gitignored local directory
-  (so sensitive exploit detail is never committed), produces a prioritized triage
-  summary, and offers to start fixing the highest-risk issues.
+  remediation. Use for Security Agent pentest and code-review findings, including
+  generic requests such as "get my security findings" or "triage the security report"
+  when the context identifies the Security Agent backend. Explicit Continuum findings
+  or an active Continuum remediation plan use remediating-with-continuum instead.
+  This skill discovers scans, exports findings to a gitignored local directory,
+  produces a prioritized triage summary, and offers to fix the highest-risk issues.
 ---
 
 # Security Agent Remediation
+
+For Continuum findings or an active Continuum remediation state, use
+[remediating-with-continuum](../remediating-with-continuum/SKILL.md).
+Do not use this workflow as a fallback when a Continuum setup, source, test, review,
+or publication gate stops progress. If the backend is unclear, resolve it from
+the existing scan and repository context before exporting or changing source.
 
 AWS Security Agent is a frontier agent that runs on-demand penetration tests and code
 reviews against a customer's applications and reports verified security risks. This skill

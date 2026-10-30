@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "aws-agents-for-devsecops",
-  "version": "1.2.0-dev.1",
+  "version": "1.2.0-dev.2",
   "description": "Investigate incidents, review releases, scan code and run penetration tests with AWS DevOps Agent and AWS Security Agent; coordinate Continuum remediation with isolated tests and local PR preparation.",
   "author": {
     "name": "Amazon Web Services"

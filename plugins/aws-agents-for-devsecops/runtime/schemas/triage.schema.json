@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "triage advisory input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "inventory",
+    "author",
+    "review",
+    "findings",
+    "advisory_groups"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "triage-v1"
+    },
+    "inventory": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer",
+        "verdict",
+        "evidence"
+      ],
+      "properties": {
+        "reviewer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verdict": {
+          "const": "reviewed"
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding_id",
+          "disposition",
+          "reason",
+          "evidence"
+        ],
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "disposition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "duplicate_of": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "original_record": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "advisory_groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "finding_ids",
+          "hypothesis",
+          "evidence",
+          "uncertainty"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "finding_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "uncertainty": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          }
+        }
+      }
+    },
+    "original_document": {
+      "type": "object"
+    }
+  }
+}

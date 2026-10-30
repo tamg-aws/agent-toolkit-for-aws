@@ -23,6 +23,9 @@ KINDS = {
     "review",
     "pr_ready",
     "pr_observation",
+    "triage",
+    "knowledge",
+    "review_package",
 }
 
 

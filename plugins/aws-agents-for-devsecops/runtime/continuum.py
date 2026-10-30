@@ -12,8 +12,12 @@ import argparse
 from pathlib import Path
 
 import intake
+import knowledge
+import preflight
 import provider
+import review_package
 import source
+import triage
 import workflow
 from store import Store, encoded, read_json
 
@@ -35,6 +39,26 @@ def main(argv: list[str] | None = None) -> int:
         "import-export", help="Import a prior export without claiming live completeness"
     )
     imported.add_argument("--file", required=True)
+    advisory = commands.add_parser(
+        "triage", help="Freeze complete advisory accounting before setup"
+    )
+    advisory.add_argument("--file", required=True)
+    prerequisites = commands.add_parser(
+        "preflight", help="Check local prerequisites without executing application code"
+    )
+    prerequisites.add_argument("--repo", required=True)
+    prerequisites.add_argument("--contract")
+    grounded = commands.add_parser(
+        "knowledge", help="Freeze source citations and attributed semantic assessments"
+    )
+    grounded.add_argument("--repo", required=True)
+    grounded.add_argument("--file", required=True)
+    package = commands.add_parser(
+        "review-package",
+        help="Export exact current local review evidence; never publish",
+    )
+    package.add_argument("--repo", required=True)
+    package.add_argument("--format", choices=("json", "markdown"), default="json")
     setup = commands.add_parser("setup")
     setup.add_argument("--repo", required=True)
     setup.add_argument("--contract", required=True)
@@ -69,9 +93,14 @@ def main(argv: list[str] | None = None) -> int:
         "--repository", required=True, help="Exact GitHub owner/name"
     )
     reconcile.add_argument("--number", required=True, type=int)
-    commands.add_parser(
-        "map", help="Return the limited finding/issue/group interaction graph"
+    graph = commands.add_parser(
+        "map",
+        help="Return source and assessment graph, including unknown relationships",
     )
+    graph.add_argument(
+        "--repo", help="Check current source; omitted means recorded bytes only"
+    )
+    graph.add_argument("--format", choices=("json", "markdown"), default="json")
     commands.add_parser("status")
     inspect = commands.add_parser("object", help="Read an immutable object by SHA256")
     inspect.add_argument("sha256")
@@ -94,6 +123,18 @@ def main(argv: list[str] | None = None) -> int:
                 )
             elif command == "import-export":
                 result = intake.import_export(store, read_json(args.file))
+            elif command == "triage":
+                result = triage.freeze(store, read_json(args.file))
+            elif command == "preflight":
+                result = preflight.check(
+                    store,
+                    args.repo,
+                    read_json(args.contract) if args.contract else None,
+                )
+            elif command == "knowledge":
+                result = knowledge.freeze(store, args.repo, read_json(args.file))
+            elif command == "review-package":
+                result = review_package.prepare(store, args.repo)
             elif command == "setup":
                 result = workflow.setup(store, args.repo, read_json(args.contract))
             elif command == "plan":
@@ -134,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                 reader = provider.GitHubReader(args.repository)
                 result = provider.reconcile(store, reader, args.repository, args.number)
             elif command == "map":
-                result = workflow.application_map(store)
+                result = knowledge.application_map(store, args.repo)
             elif command == "object":
                 sys.stdout.buffer.write(store.raw(args.sha256))
                 return 0
@@ -144,7 +185,15 @@ def main(argv: list[str] | None = None) -> int:
                     "state": str(store.root),
                     "publication": "readiness_only_no_provider_mutations",
                 }
-            sys.stdout.buffer.write(encoded(result))
+            if getattr(args, "format", None) == "markdown":
+                renderer = (
+                    knowledge.markdown if command == "map" else review_package.markdown
+                )
+                sys.stdout.write(renderer(result))
+            else:
+                sys.stdout.buffer.write(encoded(result))
+            if command == "preflight":
+                return 0 if result["passed"] else 2
             return 0 if command != "run" or result["passed"] else 2
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f"STOPPED: {error}", file=sys.stderr)

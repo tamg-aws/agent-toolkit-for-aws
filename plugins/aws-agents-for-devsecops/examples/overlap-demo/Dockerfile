@@ -1,0 +1,5 @@
+ARG PYTHON_BASE
+FROM ${PYTHON_BASE}
+RUN python -m pip install --no-cache-dir ruff==0.14.2
+ENV PYTHONDONTWRITEBYTECODE=1
+USER 65534:65534

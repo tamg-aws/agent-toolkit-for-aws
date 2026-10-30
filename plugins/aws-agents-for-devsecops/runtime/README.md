@@ -2,7 +2,7 @@
 
 This additive plugin runtime captures a selected Continuum scan, freezes application and review contracts, supervises real isolated tests, and prepares a local PR artifact. The agent performs source inspection and proposes fixes; the runtime accounts for findings and binds evidence to exact bytes. It does not automatically accept a service's proposed patch.
 
-The implemented slice covers intake, setup, issue/group planning, baseline and combined candidate validation, review, and read-only GitHub reconciliation. It does **not** create PRs, obtain exclusive publication ownership, merge, release, or reassess an environment. `prepare-pr` is not publication success. The map is a limited finding/local-issue/root-cause-group graph, not an application asset inventory.
+The implemented slice covers intake, advisory triage and source knowledge, local preflight, setup, issue/group planning, baseline and combined candidate validation, review packages, and read-only GitHub reconciliation. It does **not** create PRs, obtain exclusive publication ownership, merge, release, or reassess an environment. `prepare-pr` is not publication success. The map contains the supplied, source-cited application fragment and assessment relationships; it does not discover a complete application or deployed asset inventory.
 
 ## Run from an installed plugin
 
@@ -20,9 +20,48 @@ uv run --python 3.12 --with-requirements "$PLUGIN_ROOT/runtime/requirements-inta
   --environment ENVIRONMENT_ID --scan SCAN_ID
 ```
 
-The first slice supports the fixed Continuum endpoint in `us-east-1`, account-checked SigV4 GET operations, complete paginated lists, selected finding/issue details, and a stable second read. It retains raw responses, request identifiers and at most three attempts for transient connection failures, HTTP 429 and selected 5xx responses. Permission, identity and inventory drift failures do not retry. A failed capture remains failed; a later successful capture does not replace its evidence. Two equal reads are not a transactional service snapshot.
+The signed reader implements the observed Continuum REST contract at a fixed endpoint in `us-east-1`; it is not a guarantee of public SDK compatibility. It uses account-checked SigV4 GET operations, complete paginated lists, selected finding/issue details, and a stable second read. It retains raw responses, request identifiers and at most three attempts for transient connection failures, HTTP 429 and selected 5xx responses. Permission, identity and inventory drift failures do not retry. A failed capture remains failed; a later successful capture does not replace its evidence. Two equal reads are not a transactional service snapshot.
 
 For a prior export, use `import-export --file export.json` instead. The [example envelope](../examples/imported-export.json) is explicitly synthetic. Imported exports retain that evidence class and do not claim live completeness. Findings can reference service issues through `createdIssueId` or `duplicateOfIssueId`; issue references outside the selected scan remain visible. Continuum may already consolidate findings and propose an issue-level patch. Local groups address interactions across those issues, without treating shared membership as proof of one root cause.
+
+## Preserve triage before selecting fixes
+
+`triage` requires an inventory, but no application setup, test commands, selected fixes or execution plan. Follow [triage.schema.json](schemas/triage.schema.json): pin the inventory object hash, record an author and separately attributed review, and include every finding exactly once with its original `disposition`, `reason` and `evidence`. Keep legacy fields losslessly in each row's `original_record` and, when needed, the complete `original_document`.
+
+Disposition text is preserved, so `needs_evidence` does not become `false_positive`, and `not_applicable` does not become `out_of_scope`. A `duplicate` row needs `duplicate_of` pointing directly to a non-duplicate canonical finding. `advisory_groups` may be empty; populated groups require member finding IDs, a hypothesis, evidence and uncertainty. They are distinct from Continuum service issues and later reviewed fix groups.
+
+```bash
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" triage --file triage.json
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" preflight --repo "$APP"
+```
+
+Triage checks completeness and preserves assessment fields. It does not establish their semantic truth or grant setup, execution or publication authority. Reviewer names are assertions; retain the actual independent review record. Updating triage appends a new checkpoint.
+
+`preflight` checks Python, the Git source snapshot, external state placement and Docker availability without running application commands. Add `--contract application-contract.json` to check the proposed contract and locally available immutable image. It does not pull images, test cloud credentials, approve a contract or run baseline tests. Failed prerequisites return exit 2 with the next action; malformed input returns exit 1.
+
+## Record a source-cited application fragment
+
+Follow [knowledge.schema.json](schemas/knowledge.schema.json). A `knowledge-v1` document contains the current inventory hash, checkout `revision`, `author`, `citations`, `nodes` and `edges`. Each citation has an ID, normalized repository path, inclusive one-based `start_line`/`end_line`, whole-file `file_sha256` and exact `quote_sha256`. Spans are bounded to 200 lines. Compute the span hash from the original bytes, preserving line endings:
+
+```python
+quote_sha256 = hashlib.sha256(
+    b"".join(raw_bytes.splitlines(keepends=True)[start_line - 1:end_line])
+).hexdigest()
+```
+
+Component and asset nodes require labels and citation IDs. Edge endpoints use qualified IDs such as `component:handler`, `asset:cache`, `finding:FINDING_ID`, `service_issue:ISSUE_ID`, `advisory:GROUP_ID`, `issue:LOCAL_ISSUE_ID` or `group:FIX_GROUP_ID`. Edges require citations, a supported relationship name from the schema, and a separately attributed `assessment` containing reviewer, reason and verdict (`supported`, `unknown` or `disputed`).
+
+```bash
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" knowledge \
+  --repo "$APP" --file knowledge.json
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" map --repo "$APP"
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" map \
+  --repo "$APP" --format markdown > "$STATE/application-map.md"
+```
+
+The checkpoint pins all source bytes and the checkout revision; this does not claim those working-tree bytes were committed or ingested by Continuum. Hash and span checks prove byte correspondence, not that an edge is semantically correct, reachable, deployed or secure. Unknown and disputed assessments remain visible. Knowledge is advisory and grants no execution authority.
+
+`map --repo` rejects source drift. Omitting `--repo` displays recorded evidence and explicitly leaves current-tree freshness unchecked. Inventory, triage or plan changes require a new knowledge review. Generated Markdown escapes untrusted labels, never embeds raw finding HTML or Mermaid, and accepts no caller-supplied links. Save it beside the state `objects` directory: each generated relative link opens the immutable full-file object, while the displayed line range and span hash identify the cited bytes.
 
 ## Freeze source, tests and plan
 
@@ -78,6 +117,23 @@ Source additions and tracked deletions are supported within the allowed path set
 
 The host, Docker daemon and trusted image are the trust boundary. A malicious host user can rewrite local state; hash chains are consistency evidence, not signatures or a defense against the host administrator. No command imports model-authored successful execution receipts.
 
+## Export local review evidence
+
+After the current combined candidate passes and receives review:
+
+```bash
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" review-package \
+  --repo "$APP" > "$STATE/review-package.json"
+uv run --python 3.12 python "$RUNTIME" --state "$STATE" review-package \
+  --repo "$APP" --format markdown > "$STATE/review-package.md"
+```
+
+The package verifies the latest completed execution, complete diff, protected source, exact current bytes and checkout revision, review and any source knowledge. A later failed run or unresolved execution intent prevents reuse of an older passing run. It includes full finding accounting, service/local issue counts, reviewed groups and interactions, historical group/baseline outcomes, raw check log hashes and residual risk.
+
+Dependency batches are a deterministic ordering of the reviewed `depends_on` relationships, not an inferred risk ranking or merge permission. The package is `LOCAL_REVIEW_ONLY`: it neither commits nor publishes. A later commit changes the recorded revision and requires a separate byte-equality receipt; it does not make old tests appear to have run at the new commit.
+
+For a reproducible synthetic example of individually passing fixes that fail together, use the [public overlap demo](../examples/overlap-demo/README.md). Its initializer leaves approval fields pending. Synthetic behavior evidence remains separate from live Continuum findings.
+
 ## Prepare and reconcile a PR
 
 After review, any separately authorized commit must contain **every tested file and no additional files**. `prepare-pr` compares committed bytes with the passing snapshot. It records byte equality separately and does not claim tests ran again at the new commit.
@@ -96,7 +152,7 @@ GitHub reconciliation reads the PR twice around its checks, statuses, reviews an
 
 ## State and validation
 
-`status` lists the append-only event chain. `object SHA256` reads a verified immutable object. State and evidence stay outside application snapshots. [state.schema.json](schemas/state.schema.json) documents the event envelope; `contracts.py` enforces cross-object application/plan controls at runtime.
+`status` lists the append-only event chain. `object SHA256` reads a verified immutable object. State and evidence stay outside application snapshots. [state.schema.json](schemas/state.schema.json) documents the event envelope. The advisory input schemas describe field shapes; runtime validation additionally enforces inventory membership, canonical duplicates, distinct attributed reviewers, source/span equality and current context. `contracts.py` continues to enforce the separate application/plan execution controls.
 
 ```bash
 uv run --python 3.12 python -m unittest discover -s "$PLUGIN_ROOT/tests" -v
